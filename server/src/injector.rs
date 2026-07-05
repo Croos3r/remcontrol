@@ -250,7 +250,9 @@ impl Injector for EnigoInjector {
     }
     fn key(&mut self, key: SpecialKey) {
         use enigo::Keyboard;
-        let _ = self.0.key(map_key_special(key), enigo::Direction::Click);
+        if let Some(k) = map_key_special(key) {
+            let _ = self.0.key(k, enigo::Direction::Click);
+        }
     }
     fn modifier(&mut self, key: Modifier, action: ButtonAction) {
         use enigo::Keyboard;
@@ -262,40 +264,51 @@ impl Injector for EnigoInjector {
     }
 }
 
-fn map_key_special(key: SpecialKey) -> enigo::Key {
+fn map_key_special(key: SpecialKey) -> Option<enigo::Key> {
     match key {
-        SpecialKey::Backspace => enigo::Key::Backspace,
-        SpecialKey::Enter => enigo::Key::Return,
-        SpecialKey::Esc => enigo::Key::Escape,
-        SpecialKey::Tab => enigo::Key::Tab,
-        SpecialKey::Up => enigo::Key::UpArrow,
-        SpecialKey::Down => enigo::Key::DownArrow,
-        SpecialKey::Left => enigo::Key::LeftArrow,
-        SpecialKey::Right => enigo::Key::RightArrow,
-        SpecialKey::Delete => enigo::Key::Delete,
-        SpecialKey::Ctrl => enigo::Key::Control,
-        SpecialKey::Alt => enigo::Key::Alt,
-        SpecialKey::Shift => enigo::Key::Shift,
-        SpecialKey::Super => enigo::Key::Meta,
-        SpecialKey::Space => enigo::Key::Space,
-        SpecialKey::Home => enigo::Key::Home,
-        SpecialKey::End => enigo::Key::End,
-        SpecialKey::PageUp => enigo::Key::PageUp,
-        SpecialKey::PageDown => enigo::Key::PageDown,
-        SpecialKey::Insert => enigo::Key::Insert,
-        SpecialKey::F1 => enigo::Key::F1,
-        SpecialKey::F2 => enigo::Key::F2,
-        SpecialKey::F3 => enigo::Key::F3,
-        SpecialKey::F4 => enigo::Key::F4,
-        SpecialKey::F5 => enigo::Key::F5,
-        SpecialKey::F6 => enigo::Key::F6,
-        SpecialKey::F7 => enigo::Key::F7,
-        SpecialKey::F8 => enigo::Key::F8,
-        SpecialKey::F9 => enigo::Key::F9,
-        SpecialKey::F10 => enigo::Key::F10,
-        SpecialKey::F11 => enigo::Key::F11,
-        SpecialKey::F12 => enigo::Key::F12,
+        SpecialKey::Backspace => Some(enigo::Key::Backspace),
+        SpecialKey::Enter => Some(enigo::Key::Return),
+        SpecialKey::Esc => Some(enigo::Key::Escape),
+        SpecialKey::Tab => Some(enigo::Key::Tab),
+        SpecialKey::Up => Some(enigo::Key::UpArrow),
+        SpecialKey::Down => Some(enigo::Key::DownArrow),
+        SpecialKey::Left => Some(enigo::Key::LeftArrow),
+        SpecialKey::Right => Some(enigo::Key::RightArrow),
+        SpecialKey::Delete => Some(enigo::Key::Delete),
+        SpecialKey::Ctrl => Some(enigo::Key::Control),
+        SpecialKey::Alt => Some(enigo::Key::Alt),
+        SpecialKey::Shift => Some(enigo::Key::Shift),
+        SpecialKey::Super => Some(enigo::Key::Meta),
+        SpecialKey::Space => Some(enigo::Key::Space),
+        SpecialKey::Home => Some(enigo::Key::Home),
+        SpecialKey::End => Some(enigo::Key::End),
+        SpecialKey::PageUp => Some(enigo::Key::PageUp),
+        SpecialKey::PageDown => Some(enigo::Key::PageDown),
+        // enigo::Key::Insert is cfg-gated to Windows + Linux (not macOS).
+        SpecialKey::Insert => cfg_insert(),
+        SpecialKey::F1 => Some(enigo::Key::F1),
+        SpecialKey::F2 => Some(enigo::Key::F2),
+        SpecialKey::F3 => Some(enigo::Key::F3),
+        SpecialKey::F4 => Some(enigo::Key::F4),
+        SpecialKey::F5 => Some(enigo::Key::F5),
+        SpecialKey::F6 => Some(enigo::Key::F6),
+        SpecialKey::F7 => Some(enigo::Key::F7),
+        SpecialKey::F8 => Some(enigo::Key::F8),
+        SpecialKey::F9 => Some(enigo::Key::F9),
+        SpecialKey::F10 => Some(enigo::Key::F10),
+        SpecialKey::F11 => Some(enigo::Key::F11),
+        SpecialKey::F12 => Some(enigo::Key::F12),
     }
+}
+
+#[cfg(any(target_os = "windows", all(unix, not(target_os = "macos"))))]
+fn cfg_insert() -> Option<enigo::Key> {
+    Some(enigo::Key::Insert)
+}
+
+#[cfg(not(any(target_os = "windows", all(unix, not(target_os = "macos")))))]
+fn cfg_insert() -> Option<enigo::Key> {
+    None
 }
 
 fn map_key_modifier(key: Modifier) -> enigo::Key {

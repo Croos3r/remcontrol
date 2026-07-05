@@ -12,8 +12,8 @@ permissions:
   contents: write
 
 jobs:
-  server:
-    name: Server binaries
+  server-unix:
+    name: Server (Linux + Windows)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -24,17 +24,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: server
-      - name: Install cross
-        run: cargo install cross
       - name: Install cargo-xwin
         run: cargo install cargo-xwin
 
       - name: Build Linux
-        run: cross build --release --target x86_64-unknown-linux-gnu
-      - name: Build macOS x86_64
-        run: cross build --release --target x86_64-apple-darwin
-      - name: Build macOS aarch64
-        run: cross build --release --target aarch64-apple-darwin
+        run: cargo build --release --target x86_64-unknown-linux-gnu
       - name: Build Windows (MSVC via cargo-xwin)
         run: cargo xwin build --release --target x86_64-pc-windows-msvc
 
@@ -42,16 +36,45 @@ jobs:
         run: |
           mkdir -p staged
           cp ../target/x86_64-unknown-linux-gnu/release/remcontrol-server staged/remcontrol-server-x86_64-linux
-          cp ../target/x86_64-apple-darwin/release/remcontrol-server staged/remcontrol-server-x86_64-macos
-          cp ../target/aarch64-apple-darwin/release/remcontrol-server staged/remcontrol-server-aarch64-macos
           cp ../target/x86_64-pc-windows-msvc/release/remcontrol-server.exe staged/remcontrol-server-x86_64-windows.exe
           strip staged/remcontrol-server-x86_64-linux || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-binaries-unix
+          path: server/staged/*
+
+  server-macos:
+    name: Server (macOS)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+
+      - name: Build macOS x86_64
+        run: cargo build --release --target x86_64-apple-darwin
+      - name: Build macOS aarch64
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Stage binaries
+        run: |
+          mkdir -p staged
+          cp ../target/x86_64-apple-darwin/release/remcontrol-server staged/remcontrol-server-x86_64-macos
+          cp ../target/aarch64-apple-darwin/release/remcontrol-server staged/remcontrol-server-aarch64-macos
           strip staged/remcontrol-server-x86_64-macos || true
           strip staged/remcontrol-server-aarch64-macos || true
 
       - uses: actions/upload-artifact@v4
         with:
-          name: server-binaries
+          name: server-binaries-macos
           path: server/staged/*
 
   app:
@@ -90,7 +113,7 @@ jobs:
 
   release:
     name: Draft release
-    needs: [server, app]
+    needs: [server-unix, server-macos, app]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

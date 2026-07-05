@@ -1,0 +1,222 @@
+use crate::protocol::{ButtonAction, ClientMessage, MouseButton, SpecialKey};
+use std::collections::HashSet;
+use tokio::sync::mpsc;
+
+pub enum Command {
+    Input(ClientMessage),
+    ReleaseAll,
+}
+
+pub trait Injector: Send + 'static {
+    fn move_rel(&mut self, dx: i32, dy: i32);
+    fn button(&mut self, button: MouseButton, action: ButtonAction);
+    fn click(&mut self, button: MouseButton);
+    fn scroll(&mut self, dx: i32, dy: i32);
+    fn text(&mut self, value: &str);
+    fn key(&mut self, key: SpecialKey);
+}
+
+pub fn spawn<I: Injector>(mut injector: I) -> mpsc::UnboundedSender<Command> {
+    let (tx, mut rx) = mpsc::unbounded_channel::<Command>();
+    std::thread::spawn(move || {
+        let mut held: HashSet<MouseButton> = HashSet::new();
+        let (mut rem_x, mut rem_y) = (0.0_f64, 0.0_f64);
+        let (mut scroll_rem_x, mut scroll_rem_y) = (0.0_f64, 0.0_f64);
+        while let Some(cmd) = rx.blocking_recv() {
+            match cmd {
+                Command::Input(msg) => match msg {
+                    ClientMessage::Move { dx, dy } => {
+                        rem_x += dx;
+                        rem_y += dy;
+                        let (ix, iy) = (rem_x.trunc() as i32, rem_y.trunc() as i32);
+                        if ix != 0 || iy != 0 {
+                            rem_x -= ix as f64;
+                            rem_y -= iy as f64;
+                            injector.move_rel(ix, iy);
+                        }
+                    }
+                    ClientMessage::Click { button } => injector.click(button),
+                    ClientMessage::Button { button, action } => {
+                        match action {
+                            ButtonAction::Down => {
+                                held.insert(button);
+                            }
+                            ButtonAction::Up => {
+                                held.remove(&button);
+                            }
+                        }
+                        injector.button(button, action);
+                    }
+                    ClientMessage::Scroll { dx, dy } => {
+                        scroll_rem_x += dx;
+                        scroll_rem_y += dy;
+                        let (ix, iy) =
+                            (scroll_rem_x.trunc() as i32, scroll_rem_y.trunc() as i32);
+                        if ix != 0 || iy != 0 {
+                            scroll_rem_x -= ix as f64;
+                            scroll_rem_y -= iy as f64;
+                            injector.scroll(ix, iy);
+                        }
+                    }
+                    ClientMessage::Text { value } => injector.text(&value),
+                    ClientMessage::Key { key } => injector.key(key),
+                    ClientMessage::Hello { .. } => {}
+                },
+                Command::ReleaseAll => {
+                    for button in held.drain() {
+                        injector.button(button, ButtonAction::Up);
+                    }
+                }
+            }
+        }
+    });
+    tx
+}
+
+pub struct EnigoInjector(enigo::Enigo);
+
+pub fn spawn_enigo() -> anyhow::Result<mpsc::UnboundedSender<Command>> {
+    let enigo = enigo::Enigo::new(&enigo::Settings::default())?;
+    Ok(spawn(EnigoInjector(enigo)))
+}
+
+impl Injector for EnigoInjector {
+    fn move_rel(&mut self, dx: i32, dy: i32) {
+        use enigo::Mouse;
+        let _ = self.0.move_mouse(dx, dy, enigo::Coordinate::Rel);
+    }
+    fn button(&mut self, button: MouseButton, action: ButtonAction) {
+        use enigo::Mouse;
+        let dir = match action {
+            ButtonAction::Down => enigo::Direction::Press,
+            ButtonAction::Up => enigo::Direction::Release,
+        };
+        let _ = self.0.button(map_button(button), dir);
+    }
+    fn click(&mut self, button: MouseButton) {
+        use enigo::Mouse;
+        let _ = self.0.button(map_button(button), enigo::Direction::Click);
+    }
+    fn scroll(&mut self, dx: i32, dy: i32) {
+        use enigo::Mouse;
+        if dx != 0 {
+            let _ = self.0.scroll(dx, enigo::Axis::Horizontal);
+        }
+        if dy != 0 {
+            let _ = self.0.scroll(dy, enigo::Axis::Vertical);
+        }
+    }
+    fn text(&mut self, value: &str) {
+        use enigo::Keyboard;
+        let _ = self.0.text(value);
+    }
+    fn key(&mut self, key: SpecialKey) {
+        use enigo::Keyboard;
+        let k = match key {
+            SpecialKey::Backspace => enigo::Key::Backspace,
+            SpecialKey::Enter => enigo::Key::Return,
+            SpecialKey::Esc => enigo::Key::Escape,
+            SpecialKey::Tab => enigo::Key::Tab,
+            SpecialKey::Up => enigo::Key::UpArrow,
+            SpecialKey::Down => enigo::Key::DownArrow,
+            SpecialKey::Left => enigo::Key::LeftArrow,
+            SpecialKey::Right => enigo::Key::RightArrow,
+            SpecialKey::Delete => enigo::Key::Delete,
+        };
+        let _ = self.0.key(k, enigo::Direction::Click);
+    }
+}
+
+fn map_button(b: MouseButton) -> enigo::Button {
+    match b {
+        MouseButton::Left => enigo::Button::Left,
+        MouseButton::Right => enigo::Button::Right,
+        MouseButton::Middle => enigo::Button::Middle,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::*;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone, Default)]
+    struct Recorder(Arc<Mutex<Vec<String>>>);
+
+    impl Injector for Recorder {
+        fn move_rel(&mut self, dx: i32, dy: i32) {
+            self.0.lock().unwrap().push(format!("move {dx} {dy}"));
+        }
+        fn button(&mut self, b: MouseButton, a: ButtonAction) {
+            self.0.lock().unwrap().push(format!("button {b:?} {a:?}"));
+        }
+        fn click(&mut self, b: MouseButton) {
+            self.0.lock().unwrap().push(format!("click {b:?}"));
+        }
+        fn scroll(&mut self, dx: i32, dy: i32) {
+            self.0.lock().unwrap().push(format!("scroll {dx} {dy}"));
+        }
+        fn text(&mut self, v: &str) {
+            self.0.lock().unwrap().push(format!("text {v}"));
+        }
+        fn key(&mut self, k: SpecialKey) {
+            self.0.lock().unwrap().push(format!("key {k:?}"));
+        }
+    }
+
+    fn drain(rec: &Recorder, tx: tokio::sync::mpsc::UnboundedSender<Command>) -> Vec<String> {
+        drop(tx);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        rec.0.lock().unwrap().clone()
+    }
+
+    #[test]
+    fn dispatches_input_commands() {
+        let rec = Recorder::default();
+        let tx = spawn(rec.clone());
+        tx.send(Command::Input(ClientMessage::Move { dx: 3.0, dy: -2.0 }))
+            .unwrap();
+        tx.send(Command::Input(ClientMessage::Click {
+            button: MouseButton::Left,
+        }))
+        .unwrap();
+        tx.send(Command::Input(ClientMessage::Hello {
+            token: "x".into(),
+        }))
+        .unwrap();
+        tx.send(Command::Input(ClientMessage::Text { value: "hi".into() }))
+            .unwrap();
+        let calls = drain(&rec, tx);
+        assert_eq!(calls, vec!["move 3 -2", "click Left", "text hi"]);
+    }
+
+    #[test]
+    fn accumulates_fractional_moves() {
+        let rec = Recorder::default();
+        let tx = spawn(rec.clone());
+        for _ in 0..4 {
+            tx.send(Command::Input(ClientMessage::Move { dx: 0.5, dy: 0.0 }))
+                .unwrap();
+        }
+        let calls = drain(&rec, tx);
+        assert_eq!(
+            calls.iter().filter(|c| c.as_str() == "move 1 0").count(),
+            2
+        );
+    }
+
+    #[test]
+    fn release_all_releases_held_buttons() {
+        let rec = Recorder::default();
+        let tx = spawn(rec.clone());
+        tx.send(Command::Input(ClientMessage::Button {
+            button: MouseButton::Left,
+            action: ButtonAction::Down,
+        }))
+        .unwrap();
+        tx.send(Command::ReleaseAll).unwrap();
+        let calls = drain(&rec, tx);
+        assert_eq!(calls, vec!["button Left Down", "button Left Up"]);
+    }
+}

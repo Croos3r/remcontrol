@@ -201,3 +201,39 @@ describe('Connection.close', () => {
     expect(sent).toHaveLength(2); // hello + ack, no command after close
   });
 });
+
+describe('Connection replay / out-of-order protection (client side)', () => {
+  // The client tracks the highest server-frame counter seen and drops any
+  // frame whose counter is not strictly increasing (connection.ts recv guard).
+  // This pins replay protection on the server->client direction.
+  function driveToWelcome() {
+    const { socket, sent, open } = fakeSocket();
+    const onOpen = vi.fn();
+    const onError = vi.fn();
+    const conn = new Connection(makeInfo(), { onOpen, onError }, () => socket);
+    conn.connect();
+    open();
+    const server = serverSide(sent[0].data as string, 'secret');
+    socket.onmessage?.({ data: server.welcome });
+    socket.onmessage?.({ data: seal(server.serverKey, 0, { type: 'welcome' }) });
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    return { socket, server, onOpen, onError, conn };
+  }
+
+  it('drops a replayed server frame (same counter) without refiring onOpen', () => {
+    const { socket, server, onOpen, onError } = driveToWelcome();
+    // Re-send the counter-0 welcome frame (replay).
+    socket.onmessage?.({ data: seal(server.serverKey, 0, { type: 'welcome' }) });
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('drops an out-of-order server frame (older counter)', () => {
+    const { socket, server, onOpen, onError } = driveToWelcome();
+    // Advance the counter with an ignored-type frame, then send an older one.
+    socket.onmessage?.({ data: seal(server.serverKey, 2, { type: 'noop' }) });
+    socket.onmessage?.({ data: seal(server.serverKey, 1, { type: 'welcome' }) });
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
+  });
+});

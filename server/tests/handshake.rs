@@ -221,3 +221,177 @@ async fn no_origin_allowlist_rejects_any_browser_origin() {
         "with an empty allowlist, any browser Origin must be rejected"
     );
 }
+
+#[tokio::test]
+async fn origin_allowlist_lets_originless_native_client_through() {
+    // A non-empty allowlist must still accept the native app, which sends no
+    // Origin header. tokio_tungstenite without a custom request sends none.
+    let (url, _rx) = start_server_with("secret", vec!["https://app.example".into()]).await;
+    let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let hello = HelloFrame {
+        v: PROTOCOL_VERSION,
+        pubkey: pubkey_hex(&Handshake::new().public()),
+    };
+    ws.send(TsMessage::Text(
+        serde_json::to_string(&hello).unwrap().into(),
+    ))
+    .await
+    .unwrap();
+    // A welcome frame proves the upgrade was accepted and the handshake started.
+    let next = tokio::time::timeout(std::time::Duration::from_secs(2), ws.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(
+        matches!(next.into_text(), Ok(t) if serde_json::from_str::<WelcomeFrame>(&t).is_ok()),
+        "native (Origin-less) client must be accepted even with a non-empty allowlist"
+    );
+}
+
+/// Repeated bad-token handshakes from one peer must eventually be banned by the
+/// rate limiter (C-2). The ban surfaces as a fast auth error, not a 403.
+#[tokio::test]
+async fn rate_limit_bans_after_repeated_bad_handshakes() {
+    let (url, _rx) = start_server("secret").await;
+    // MAX_AUTH_FAILURES is 5: the 5th failure trips the ban. Send several
+    // wrong-token attempts and assert that a later attempt is rejected with
+    // the rate-limit message rather than progressing the handshake.
+    for i in 0..5 {
+        let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+        let hs = Handshake::new();
+        let hello = HelloFrame {
+            v: PROTOCOL_VERSION,
+            pubkey: pubkey_hex(&hs.public()),
+        };
+        ws.send(TsMessage::Text(
+            serde_json::to_string(&hello).unwrap().into(),
+        ))
+        .await
+        .unwrap();
+        let welcome = ws.next().await.unwrap().unwrap().into_text().unwrap();
+        let server_pub = parse_pubkey_hex(
+            &serde_json::from_str::<WelcomeFrame>(&welcome)
+                .unwrap()
+                .pubkey,
+        )
+        .unwrap();
+        let shared = hs.shared_secret(&server_pub).unwrap();
+        let keys = SessionKeys::derive_client(&shared, &psk_from_token("wrong"));
+        ws.send(TsMessage::Binary(keys.seal(0, b"{}").into()))
+            .await
+            .unwrap();
+        // Drain the error/close so the connection fully terminates before the
+        // next attempt; this also records the failure in the rate limiter.
+        let _ = tokio::time::timeout(std::time::Duration::from_millis(500), ws.next()).await;
+        drop(ws);
+        let _ = i;
+    }
+    // 6th attempt from the same IP: banned, so authenticate() returns the
+    // rate-limit error and the server closes without a welcome.
+    let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let hello = HelloFrame {
+        v: PROTOCOL_VERSION,
+        pubkey: pubkey_hex(&Handshake::new().public()),
+    };
+    ws.send(TsMessage::Text(
+        serde_json::to_string(&hello).unwrap().into(),
+    ))
+    .await
+    .unwrap();
+    let mut saw_rate_limit = false;
+    for _ in 0..4 {
+        match tokio::time::timeout(std::time::Duration::from_millis(500), ws.next()).await {
+            Ok(Some(Ok(TsMessage::Text(t)))) if t.contains("too many") => {
+                saw_rate_limit = true;
+                break;
+            }
+            Ok(Some(Ok(TsMessage::Close(_)))) | Ok(None) | Err(_) => break,
+            _ => continue,
+        }
+    }
+    assert!(
+        saw_rate_limit,
+        "a banned peer must receive the rate-limit error, not a fresh welcome"
+    );
+}
+
+/// A replayed encrypted frame (same nonce/counter) must be dropped by the
+/// server's RecvCounter, closing the connection instead of injecting twice.
+#[tokio::test]
+async fn replayed_encrypted_frame_drops_connection() {
+    let (url, mut rx) = start_server("secret").await;
+    let mut client = EncClient::connect(&url, "secret").await;
+    // Send a Move, then replay the exact same sealed frame (same counter).
+    let frame = {
+        let pt = serde_json::to_vec(&ClientMessage::Move { dx: 1.0, dy: 0.0 }).unwrap();
+        client.keys.seal(client.send_counter, &pt)
+    };
+    client
+        .ws
+        .send(TsMessage::Binary(frame.clone().into()))
+        .await
+        .unwrap();
+    // Replay the identical frame.
+    client
+        .ws
+        .send(TsMessage::Binary(frame.into()))
+        .await
+        .unwrap();
+    // The first Move is injected exactly once.
+    let first = rx.recv().await.unwrap();
+    assert!(matches!(first, Command::Input(ClientMessage::Move { .. })));
+    // No second Move arrives: the replay closes the connection. The only thing
+    // that may follow on the channel is the disconnect ReleaseAll cleanup, not
+    // a duplicate Move.
+    let second = tokio::time::timeout(std::time::Duration::from_millis(300), rx.recv()).await;
+    match second {
+        Err(_) | Ok(None) | Ok(Some(Command::ReleaseAll)) => {}
+        Ok(Some(Command::Input(other))) => panic!(
+            "replayed frame must not be injected again; got Move/Input {:?}",
+            other
+        ),
+    }
+    // Connection is torn down.
+    let closed =
+        tokio::time::timeout(std::time::Duration::from_millis(500), client.ws.next()).await;
+    assert!(
+        matches!(closed, Ok(Some(Ok(TsMessage::Close(_)))) | Ok(None)),
+        "server must close after a replayed frame"
+    );
+}
+
+/// Text over the 4096-byte cap is rejected before reaching the injector (M-2):
+/// the server sends an encrypted Error and never dispatches the Text command.
+#[tokio::test]
+async fn oversized_text_is_rejected_before_injection() {
+    let (url, mut rx) = start_server("secret").await;
+    let mut client = EncClient::connect(&url, "secret").await;
+    let too_long = "x".repeat(4097);
+    client
+        .send_encrypted(&ClientMessage::Text {
+            value: too_long.clone(),
+        })
+        .await;
+    // The server must reject with an Error, and must NOT inject the Text.
+    let err = client.recv_encrypted().await.unwrap();
+    assert!(
+        matches!(err, ServerMessage::Error { ref message } if message.contains("too long")),
+        "oversized Text must yield an error, got {err:?}"
+    );
+    // Nothing reaches the injector within a short window.
+    let leaked = tokio::time::timeout(std::time::Duration::from_millis(300), rx.recv()).await;
+    assert!(
+        leaked.is_err() || matches!(leaked, Ok(None)),
+        "oversized Text must never be dispatched to the injector"
+    );
+    // Connection survives the rejection (validation error does not close).
+    client
+        .send_encrypted(&ClientMessage::Move { dx: 1.0, dy: 1.0 })
+        .await;
+    let cmd = rx.recv().await.unwrap();
+    assert!(
+        matches!(cmd, Command::Input(ClientMessage::Move { .. })),
+        "connection must still work after a validation error"
+    );
+}

@@ -1,4 +1,4 @@
-use crate::protocol::{ButtonAction, ClientMessage, MouseButton, SpecialKey};
+use crate::protocol::{ButtonAction, ClientMessage, Modifier, MouseButton, SpecialKey};
 use std::collections::HashSet;
 use tokio::sync::mpsc;
 
@@ -14,12 +14,14 @@ pub trait Injector: Send + 'static {
     fn scroll(&mut self, dx: i32, dy: i32);
     fn text(&mut self, value: &str);
     fn key(&mut self, key: SpecialKey);
+    fn modifier(&mut self, key: Modifier, action: ButtonAction);
 }
 
 pub fn spawn<I: Injector>(mut injector: I) -> mpsc::UnboundedSender<Command> {
     let (tx, mut rx) = mpsc::unbounded_channel::<Command>();
     std::thread::spawn(move || {
         let mut held: HashSet<MouseButton> = HashSet::new();
+        let mut held_mods: HashSet<Modifier> = HashSet::new();
         let (mut rem_x, mut rem_y) = (0.0_f64, 0.0_f64);
         let (mut scroll_rem_x, mut scroll_rem_y) = (0.0_f64, 0.0_f64);
         let mut pending: std::collections::VecDeque<Command> = std::collections::VecDeque::new();
@@ -89,11 +91,25 @@ pub fn spawn<I: Injector>(mut injector: I) -> mpsc::UnboundedSender<Command> {
                         injector.text(&buf);
                     }
                     ClientMessage::Key { key } => injector.key(key),
+                    ClientMessage::ModifierAction { key, action } => {
+                        match action {
+                            ButtonAction::Down => {
+                                held_mods.insert(key);
+                            }
+                            ButtonAction::Up => {
+                                held_mods.remove(&key);
+                            }
+                        }
+                        injector.modifier(key, action);
+                    }
                     ClientMessage::Hello { .. } => {}
                 },
                 Command::ReleaseAll => {
                     for button in held.drain() {
                         injector.button(button, ButtonAction::Up);
+                    }
+                    for m in held_mods.drain() {
+                        injector.modifier(m, ButtonAction::Up);
                     }
                 }
             }
@@ -160,18 +176,60 @@ impl Injector for EnigoInjector {
     }
     fn key(&mut self, key: SpecialKey) {
         use enigo::Keyboard;
-        let k = match key {
-            SpecialKey::Backspace => enigo::Key::Backspace,
-            SpecialKey::Enter => enigo::Key::Return,
-            SpecialKey::Esc => enigo::Key::Escape,
-            SpecialKey::Tab => enigo::Key::Tab,
-            SpecialKey::Up => enigo::Key::UpArrow,
-            SpecialKey::Down => enigo::Key::DownArrow,
-            SpecialKey::Left => enigo::Key::LeftArrow,
-            SpecialKey::Right => enigo::Key::RightArrow,
-            SpecialKey::Delete => enigo::Key::Delete,
+        let _ = self.0.key(map_key_special(key), enigo::Direction::Click);
+    }
+    fn modifier(&mut self, key: Modifier, action: ButtonAction) {
+        use enigo::Keyboard;
+        let dir = match action {
+            ButtonAction::Down => enigo::Direction::Press,
+            ButtonAction::Up => enigo::Direction::Release,
         };
-        let _ = self.0.key(k, enigo::Direction::Click);
+        let _ = self.0.key(map_key_modifier(key), dir);
+    }
+}
+
+fn map_key_special(key: SpecialKey) -> enigo::Key {
+    match key {
+        SpecialKey::Backspace => enigo::Key::Backspace,
+        SpecialKey::Enter => enigo::Key::Return,
+        SpecialKey::Esc => enigo::Key::Escape,
+        SpecialKey::Tab => enigo::Key::Tab,
+        SpecialKey::Up => enigo::Key::UpArrow,
+        SpecialKey::Down => enigo::Key::DownArrow,
+        SpecialKey::Left => enigo::Key::LeftArrow,
+        SpecialKey::Right => enigo::Key::RightArrow,
+        SpecialKey::Delete => enigo::Key::Delete,
+        SpecialKey::Ctrl => enigo::Key::Control,
+        SpecialKey::Alt => enigo::Key::Alt,
+        SpecialKey::Shift => enigo::Key::Shift,
+        SpecialKey::Super => enigo::Key::Meta,
+        SpecialKey::Space => enigo::Key::Space,
+        SpecialKey::Home => enigo::Key::Home,
+        SpecialKey::End => enigo::Key::End,
+        SpecialKey::PageUp => enigo::Key::PageUp,
+        SpecialKey::PageDown => enigo::Key::PageDown,
+        SpecialKey::Insert => enigo::Key::Insert,
+        SpecialKey::F1 => enigo::Key::F1,
+        SpecialKey::F2 => enigo::Key::F2,
+        SpecialKey::F3 => enigo::Key::F3,
+        SpecialKey::F4 => enigo::Key::F4,
+        SpecialKey::F5 => enigo::Key::F5,
+        SpecialKey::F6 => enigo::Key::F6,
+        SpecialKey::F7 => enigo::Key::F7,
+        SpecialKey::F8 => enigo::Key::F8,
+        SpecialKey::F9 => enigo::Key::F9,
+        SpecialKey::F10 => enigo::Key::F10,
+        SpecialKey::F11 => enigo::Key::F11,
+        SpecialKey::F12 => enigo::Key::F12,
+    }
+}
+
+fn map_key_modifier(key: Modifier) -> enigo::Key {
+    match key {
+        Modifier::Ctrl => enigo::Key::Control,
+        Modifier::Alt => enigo::Key::Alt,
+        Modifier::Shift => enigo::Key::Shift,
+        Modifier::Super => enigo::Key::Meta,
     }
 }
 
@@ -210,6 +268,9 @@ mod tests {
         }
         fn key(&mut self, k: SpecialKey) {
             self.0.lock().unwrap().push(format!("key {k:?}"));
+        }
+        fn modifier(&mut self, k: Modifier, a: ButtonAction) {
+            self.0.lock().unwrap().push(format!("modifier {k:?} {a:?}"));
         }
     }
 
@@ -266,5 +327,19 @@ mod tests {
         tx.send(Command::ReleaseAll).unwrap();
         let calls = drain(&rec, tx);
         assert_eq!(calls, vec!["button Left Down", "button Left Up"]);
+    }
+
+    #[test]
+    fn release_all_releases_held_modifiers() {
+        let rec = Recorder::default();
+        let tx = spawn(rec.clone());
+        tx.send(Command::Input(ClientMessage::ModifierAction {
+            key: Modifier::Ctrl,
+            action: ButtonAction::Down,
+        }))
+        .unwrap();
+        tx.send(Command::ReleaseAll).unwrap();
+        let calls = drain(&rec, tx);
+        assert_eq!(calls, vec!["modifier Ctrl Down", "modifier Ctrl Up"]);
     }
 }

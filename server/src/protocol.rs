@@ -15,7 +15,7 @@ pub enum ButtonAction {
     Up,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SpecialKey {
     Backspace,
@@ -27,6 +27,39 @@ pub enum SpecialKey {
     Left,
     Right,
     Delete,
+    Ctrl,
+    Alt,
+    Shift,
+    Super,
+    Space,
+    Home,
+    End,
+    #[serde(rename = "pageup")]
+    PageUp,
+    #[serde(rename = "pagedown")]
+    PageDown,
+    Insert,
+    F1,
+    F2,
+    F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Modifier {
+    Ctrl,
+    Alt,
+    Shift,
+    Super,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -39,6 +72,8 @@ pub enum ClientMessage {
     Scroll { dx: f64, dy: f64 },
     Text { value: String },
     Key { key: SpecialKey },
+    #[serde(rename = "modifier")]
+    ModifierAction { key: Modifier, action: ButtonAction },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -90,6 +125,23 @@ mod tests {
                 r#"{"type":"key","key":"backspace"}"#,
                 ClientMessage::Key {
                     key: SpecialKey::Backspace,
+                },
+            ),
+            (
+                r#"{"type":"key","key":"pageup"}"#,
+                ClientMessage::Key {
+                    key: SpecialKey::PageUp,
+                },
+            ),
+            (
+                r#"{"type":"key","key":"f5"}"#,
+                ClientMessage::Key { key: SpecialKey::F5 },
+            ),
+            (
+                r#"{"type":"modifier","key":"ctrl","action":"down"}"#,
+                ClientMessage::ModifierAction {
+                    key: Modifier::Ctrl,
+                    action: ButtonAction::Down,
                 },
             ),
         ];

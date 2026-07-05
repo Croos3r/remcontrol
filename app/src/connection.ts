@@ -94,4 +94,7 @@ export class Connection {
   key(key: string): void {
     this.send({ type: 'key', key });
   }
+  modifier(key: string, action: 'down' | 'up'): void {
+    this.send({ type: 'modifier', key, action });
+  }
 }

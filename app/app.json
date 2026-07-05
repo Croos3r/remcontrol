@@ -16,10 +16,18 @@
       ]
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSBonjourServices": ["_remcontrol._tcp"],
+        "NSLocalNetworkUsageDescription": "remcontrol uses your local network to discover your PC."
+      }
     },
     "android": {
       "package": "fr.dorianmoy.remcontrol",
+      "permissions": [
+        "android.permission.ACCESS_WIFI_STATE",
+        "android.permission.CHANGE_WIFI_MULTICAST_STATE"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#111111",
         "foregroundImage": "./assets/android-icon-foreground.png",

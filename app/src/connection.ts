@@ -6,13 +6,28 @@ export type ConnectionEvents = {
   onError?: (message: string) => void;
 };
 
+export type WebSocketLike = {
+  readyState: number;
+  onopen: (() => void) | null;
+  onmessage: ((event: { data: string }) => void) | null;
+  onerror: (() => void) | null;
+  onclose: (() => void) | null;
+  send(data: string): void;
+  close(): void;
+};
+
+export type WebSocketFactory = (url: string) => WebSocketLike;
+
+const defaultFactory: WebSocketFactory = (url) => new WebSocket(url) as unknown as WebSocketLike;
+
 export class Connection {
-  private ws: WebSocket | null = null;
+  private ws: WebSocketLike | null = null;
   private welcomed = false;
 
   constructor(
     readonly info: ServerInfo,
     private events: ConnectionEvents = {},
+    private createSocket: WebSocketFactory = defaultFactory,
   ) {}
 
   setEvents(events: ConnectionEvents): void {
@@ -20,7 +35,7 @@ export class Connection {
   }
 
   connect(): void {
-    const ws = new WebSocket(`ws://${this.info.ip}:${this.info.port}/ws`);
+    const ws = this.createSocket(`ws://${this.info.ip}:${this.info.port}/ws`);
     this.ws = ws;
     this.welcomed = false;
     ws.onopen = () => {
@@ -53,7 +68,7 @@ export class Connection {
   }
 
   get connected(): boolean {
-    return this.welcomed && this.ws?.readyState === WebSocket.OPEN;
+    return this.welcomed && this.ws?.readyState === 1;
   }
 
   close(): void {

@@ -34,7 +34,7 @@ jobs:
         run: cargo test
 
   app:
-    name: App (biome, tsc)
+    name: App (biome, tsc, test)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -51,3 +51,5 @@ jobs:
         run: npx @biomejs/biome ci
       - name: Type check
         run: npx tsc --noEmit
+      - name: Test
+        run: npm test

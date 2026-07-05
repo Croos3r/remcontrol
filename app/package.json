@@ -15,6 +15,7 @@
     "react-native-zeroconf": "^0.14.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.2",
     "@types/react": "~19.2.2",
     "babel-preset-expo": "~57.0.1",
     "typescript": "~6.0.3"
@@ -23,7 +24,10 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "check": "biome check",
+    "lint": "biome lint",
+    "format": "biome format --write"
   },
   "private": true
 }

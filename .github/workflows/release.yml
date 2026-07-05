@@ -35,8 +35,8 @@ jobs:
       - name: Stage binaries
         run: |
           mkdir -p staged
-          cp ../target/x86_64-unknown-linux-gnu/release/remcontrol-server staged/remcontrol-server-x86_64-linux
-          cp ../target/x86_64-pc-windows-msvc/release/remcontrol-server.exe staged/remcontrol-server-x86_64-windows.exe
+          cp target/x86_64-unknown-linux-gnu/release/remcontrol-server staged/remcontrol-server-x86_64-linux
+          cp target/x86_64-pc-windows-msvc/release/remcontrol-server.exe staged/remcontrol-server-x86_64-windows.exe
           strip staged/remcontrol-server-x86_64-linux || true
 
       - uses: actions/upload-artifact@v4
@@ -67,8 +67,8 @@ jobs:
       - name: Stage binaries
         run: |
           mkdir -p staged
-          cp ../target/x86_64-apple-darwin/release/remcontrol-server staged/remcontrol-server-x86_64-macos
-          cp ../target/aarch64-apple-darwin/release/remcontrol-server staged/remcontrol-server-aarch64-macos
+          cp target/x86_64-apple-darwin/release/remcontrol-server staged/remcontrol-server-x86_64-macos
+          cp target/aarch64-apple-darwin/release/remcontrol-server staged/remcontrol-server-aarch64-macos
           strip staged/remcontrol-server-x86_64-macos || true
           strip staged/remcontrol-server-aarch64-macos || true
 

@@ -58,18 +58,19 @@ Three build jobs + one publish job. `concurrency` group `release-${{ github.ref 
 ### `server` (ubuntu-latest, cross-compilation)
 
 - `dtolnay/rust-toolchain@stable`.
-- `cargo install cross`.
-- Matrix of targets, each via `cross build --release --target <target>`:
-  - `x86_64-unknown-linux-gnu` → `remcontrol-server-x86_64-linux`
-  - `x86_64-apple-darwin` → `remcontrol-server-x86_64-macos`
-  - `aarch64-apple-darwin` → `remcontrol-server-aarch64-macos`
-  - `x86_64-pc-windows-gnu` → `remcontrol-server-x86_64-windows.exe`
+- `cargo install cross cargo-xwin`.
+- Targets:
+  - `x86_64-unknown-linux-gnu` via `cross build --release --target x86_64-unknown-linux-gnu` → `remcontrol-server-x86_64-linux`
+  - `x86_64-apple-darwin` via `cross build --release --target x86_64-apple-darwin` → `remcontrol-server-x86_64-macos`
+  - `aarch64-apple-darwin` via `cross build --release --target aarch64-apple-darwin` → `remcontrol-server-aarch64-macos`
+  - `x86_64-pc-windows-msvc` via `cargo xwin build --release --target x86_64-pc-windows-msvc` → `remcontrol-server-x86_64-windows.exe`
 - Copy each release binary to its release name; strip symbols where possible.
 - Upload each via `actions/upload-artifact`.
 
-Windows uses `pc-windows-gnu` (MinGW) so it cross-compiles from a Linux runner
-without a Windows host or `cargo-xwin`. Trade-off: depends on the MinGW runtime.
-If MSVC-quality binaries are wanted later, switch that target to `cargo-xwin`.
+Windows uses `pc-windows-msvc` via `cargo-xwin`, which downloads the Windows SDK
+and MSVC CRT under Xwin on the Linux runner. Produces a native MSVC binary, no
+MinGW runtime dependency. The Windows target is built separately from the
+`cross` matrix because it uses `cargo xwin` instead of `cross`.
 
 macOS binaries are unsigned. Users must run `xattr -dr com.apple.quarantine
 <binary>` (documented in the release body).
@@ -116,7 +117,8 @@ macOS binaries are unsigned. Users must run `xattr -dr com.apple.quarantine
 
 - First release run ~15-25 min (Rust cross-compiles are the long pole).
 - macOS binaries unsigned → Gatekeeper friction, mitigated by release notes.
-- Windows `gnu` binary depends on MinGW runtime; documented alternative is
-  `cargo-xwin` for MSVC.
+- Windows binary is MSVC (`cargo-xwin`) — `cargo-xwin` downloads the Windows
+  SDK/MSVC CRT on the runner, adding ~1-2 min and a network dependency to the
+  first build. Resulting binary is a native MSVC build.
 - Gradle APK build needs JDK 17; ubuntu runner ships it, `JAVA_HOME` set
   explicitly.

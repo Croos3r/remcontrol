@@ -81,3 +81,19 @@ replay-protected. The token never travels in plaintext after pairing.
   `allowed_origins` in the config if you build a web client.
 - Rotate the token with `cargo run --release -- --reset-token`; previously
   paired phones must re-pair.
+
+## Releases
+
+Push a `v*` tag (e.g. `v1.0.0`) to trigger the release workflow. It builds the
+server binaries (Linux, macOS Intel/ARM, Windows) and the Android APK, and
+drafts a GitHub Release with all artifacts attached. The release is a draft:
+review it and publish manually.
+
+The macOS binaries are unsigned. On first run, clear the quarantine attribute:
+
+```sh
+xattr -dr com.apple.quarantine remcontrol-server-*
+```
+
+The Linux server needs `xdotool` at runtime for text entry.
+

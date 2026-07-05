@@ -1,8 +1,17 @@
 import { type BarcodeScanningResult, CameraView, useCameraPermissions } from 'expo-camera';
 import { useEffect, useRef, useState } from 'react';
-import { FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  Dimensions,
+  FlatList,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Connection } from '../connection';
-import { saveLastConnection } from '../storage';
+import { forgetConnection, loadRecentConnections, saveConnection } from '../storage';
 import type { ServerInfo } from '../types';
 
 type Zeroconf = {
@@ -28,7 +37,7 @@ function createZeroconf(): Zeroconf | null {
   }
 }
 
-type Tab = 'scan' | 'discover' | 'manual';
+type Tab = 'scan' | 'discover' | 'manual' | 'recent';
 
 interface Discovered {
   name: string;
@@ -40,7 +49,12 @@ interface Props {
   onConnected: (conn: Connection, info: ServerInfo) => void;
 }
 
+function displayName(info: ServerInfo): string {
+  return info.name?.trim() || `${info.ip}:${info.port}`;
+}
+
 export default function ConnectScreen({ onConnected }: Props) {
+  const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('scan');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -52,9 +66,14 @@ export default function ConnectScreen({ onConnected }: Props) {
   const [zeroconfAvailable, setZeroconfAvailable] = useState(true);
   const [pendingServer, setPendingServer] = useState<Discovered | null>(null);
 
+  const [recent, setRecent] = useState<ServerInfo[]>([]);
   const [ip, setIp] = useState('');
   const [port, setPort] = useState('17890');
   const [token, setToken] = useState('');
+
+  useEffect(() => {
+    void loadRecentConnections().then(setRecent);
+  }, []);
 
   useEffect(() => {
     if (tab === 'scan') scannedRef.current = false;
@@ -89,7 +108,7 @@ export default function ConnectScreen({ onConnected }: Props) {
     setError(null);
     const conn = new Connection(info, {
       onOpen: () => {
-        void saveLastConnection(info);
+        void saveConnection(info).then(setRecent);
         setBusy(false);
         onConnected(conn, info);
       },
@@ -112,7 +131,7 @@ export default function ConnectScreen({ onConnected }: Props) {
         typeof info.token === 'string'
       ) {
         scannedRef.current = true;
-        connect(info);
+        connect({ ...info, name: typeof info.name === 'string' ? info.name : undefined });
       } else {
         setError('QR code is not a remcontrol pairing code');
       }
@@ -130,6 +149,10 @@ export default function ConnectScreen({ onConnected }: Props) {
     connect({ ip: ip.trim(), port: portNumber, token: token.trim() });
   };
 
+  const forget = async (info: ServerInfo) => {
+    setRecent(await forgetConnection(info));
+  };
+
   const renderScan = () => {
     if (!permission?.granted) {
       return (
@@ -141,13 +164,16 @@ export default function ConnectScreen({ onConnected }: Props) {
         </View>
       );
     }
+    const width = Math.min(Dimensions.get('window').width - 40, 360);
     return (
-      <View style={styles.cameraWrap}>
-        <CameraView
-          style={StyleSheet.absoluteFill}
-          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-          onBarcodeScanned={onBarcode}
-        />
+      <View style={styles.scanColumn}>
+        <View style={[styles.cameraFrame, { width, height: width }]}>
+          <CameraView
+            style={StyleSheet.absoluteFill}
+            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+            onBarcodeScanned={onBarcode}
+          />
+        </View>
         <Text style={styles.scanHint}>Point at the QR code in the server terminal</Text>
       </View>
     );
@@ -208,6 +234,39 @@ export default function ConnectScreen({ onConnected }: Props) {
     );
   };
 
+  const renderRecent = () => {
+    if (recent.length === 0) {
+      return (
+        <View style={styles.center}>
+          <Text style={styles.hint}>No saved servers yet. Scan a QR code or connect manually.</Text>
+        </View>
+      );
+    }
+    return (
+      <FlatList
+        data={recent}
+        keyExtractor={(item) => `${item.ip}:${item.port}`}
+        renderItem={({ item }) => (
+          <View style={styles.listItemRow}>
+            <TouchableOpacity style={styles.listItem} onPress={() => connect(item)} disabled={busy}>
+              <Text style={styles.listItemName}>{displayName(item)}</Text>
+              <Text style={styles.listItemAddress}>
+                {item.ip}:{item.port}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.forgetButton}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              onPress={() => void forget(item)}
+            >
+              <Text style={styles.forgetText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      />
+    );
+  };
+
   const renderManual = () => (
     <View style={styles.form}>
       <TextInput
@@ -243,11 +302,14 @@ export default function ConnectScreen({ onConnected }: Props) {
     </View>
   );
 
+  const tabs: Tab[] = ['scan', 'discover', 'manual'];
+  if (recent.length > 0) tabs.push('recent');
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
       <Text style={styles.title}>remcontrol</Text>
       <View style={styles.tabs}>
-        {(['scan', 'discover', 'manual'] as const).map((t) => (
+        {tabs.map((t) => (
           <TouchableOpacity
             key={t}
             style={[styles.tab, tab === t && styles.tabActive]}
@@ -257,7 +319,13 @@ export default function ConnectScreen({ onConnected }: Props) {
             }}
           >
             <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-              {t === 'scan' ? 'Scan' : t === 'discover' ? 'Discover' : 'Manual'}
+              {t === 'scan'
+                ? 'Scan'
+                : t === 'discover'
+                  ? 'Discover'
+                  : t === 'manual'
+                    ? 'Manual'
+                    : 'Recent'}
             </Text>
           </TouchableOpacity>
         ))}
@@ -266,6 +334,7 @@ export default function ConnectScreen({ onConnected }: Props) {
         {tab === 'scan' && renderScan()}
         {tab === 'discover' && renderDiscover()}
         {tab === 'manual' && renderManual()}
+        {tab === 'recent' && renderRecent()}
       </View>
       {busy && <Text style={styles.status}>Connecting…</Text>}
       {error && <Text style={styles.error}>{error}</Text>}
@@ -277,8 +346,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#111',
-    paddingTop: 64,
     paddingHorizontal: 20,
+    paddingBottom: 12,
   },
   title: {
     color: '#fff',
@@ -317,17 +386,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 16,
   },
-  cameraWrap: {
+  scanColumn: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  cameraFrame: {
     borderRadius: 12,
     overflow: 'hidden',
-    justifyContent: 'flex-end',
+    backgroundColor: '#000',
   },
   scanHint: {
-    color: '#fff',
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    color: '#aaa',
+    fontSize: 15,
     textAlign: 'center',
-    padding: 10,
   },
   form: {
     gap: 12,
@@ -361,11 +434,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: 'center',
   },
+  listItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
   listItem: {
+    flex: 1,
     backgroundColor: '#1d1d1d',
     borderRadius: 8,
     padding: 14,
-    marginBottom: 10,
   },
   listItemName: {
     color: '#fff',
@@ -376,6 +454,14 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 14,
     marginTop: 2,
+  },
+  forgetButton: {
+    marginLeft: 10,
+    padding: 8,
+  },
+  forgetText: {
+    color: '#888',
+    fontSize: 16,
   },
   status: {
     color: '#4da6ff',

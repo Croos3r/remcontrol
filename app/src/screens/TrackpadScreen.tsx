@@ -12,7 +12,7 @@ import {
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Connection } from '../connection';
+import type { Connection } from '../connection';
 
 interface Props {
   connection: Connection;
@@ -242,19 +242,14 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
     const prevSuffix = prev.startsWith(KEYBOARD_SENTINEL)
       ? prev.slice(KEYBOARD_SENTINEL.length)
       : prev;
-    const suffix = text.startsWith(KEYBOARD_SENTINEL)
-      ? text.slice(KEYBOARD_SENTINEL.length)
-      : text;
+    const suffix = text.startsWith(KEYBOARD_SENTINEL) ? text.slice(KEYBOARD_SENTINEL.length) : text;
     if (suffix === prevSuffix) {
       setInputValue(text);
       return;
     }
     if (suffix.length > prevSuffix.length && suffix.startsWith(prevSuffix)) {
       connection.text(suffix.slice(prevSuffix.length));
-    } else if (
-      prevSuffix.length > suffix.length &&
-      prevSuffix.startsWith(suffix)
-    ) {
+    } else if (prevSuffix.length > suffix.length && prevSuffix.startsWith(suffix)) {
       const removed = prevSuffix.length - suffix.length;
       for (let i = 0; i < removed; i++) connection.key('backspace');
     } else {
@@ -330,11 +325,7 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
 
       <View style={[styles.topBar, { paddingTop: insets.top }]} pointerEvents="box-none">
         <View style={styles.controlCluster} pointerEvents="auto">
-          <ControlButton
-            label="⌨"
-            active={keyboardOpen}
-            onPress={toggleKeyboard}
-          />
+          <ControlButton label="⌨" active={keyboardOpen} onPress={toggleKeyboard} />
           <ControlButton
             label="⚙"
             active={showSettings}
@@ -342,10 +333,7 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
           />
           <View style={styles.spacer} />
           <View
-            style={[
-              styles.statusDot,
-              status === 'connected' ? styles.dotGreen : styles.dotOrange,
-            ]}
+            style={[styles.statusDot, status === 'connected' ? styles.dotGreen : styles.dotOrange]}
           />
           <ControlButton label="✕" onPress={disconnect} />
         </View>
@@ -358,12 +346,7 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
                 style={[styles.chip, sensitivity === s.value && styles.chipActive]}
                 onPress={() => setSensitivity(s.value)}
               >
-                <Text
-                  style={[
-                    styles.chipText,
-                    sensitivity === s.value && styles.chipTextActive,
-                  ]}
-                >
+                <Text style={[styles.chipText, sensitivity === s.value && styles.chipTextActive]}>
                   {s.label}
                 </Text>
               </TouchableOpacity>
@@ -375,8 +358,8 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
       <GestureDetector gesture={gesture}>
         <View style={styles.pad}>
           <Text style={styles.padHint}>
-            1 finger: move · tap: click · 2 fingers: scroll · 2-finger tap:
-            right click · double-tap and hold: drag
+            1 finger: move · tap: click · 2 fingers: scroll · 2-finger tap: right click · double-tap
+            and hold: drag
           </Text>
         </View>
       </GestureDetector>
@@ -400,12 +383,7 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
       />
 
       {trayVisible && (
-        <View
-          style={[
-            styles.tray,
-            { left: resolvedTrayPos.x, top: resolvedTrayPos.y },
-          ]}
-        >
+        <View style={[styles.tray, { left: resolvedTrayPos.x, top: resolvedTrayPos.y }]}>
           <GestureDetector gesture={trayDrag}>
             <View style={styles.trayHandle}>
               <Text style={styles.trayHandleText}>⋮⋮</Text>
@@ -423,18 +401,10 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
             {MODIFIERS.map((m) => (
               <TouchableOpacity
                 key={m}
-                style={[
-                  styles.keyButton,
-                  heldMods.has(m) && styles.keyButtonActive,
-                ]}
+                style={[styles.keyButton, heldMods.has(m) && styles.keyButtonActive]}
                 onPress={() => toggleModifier(m)}
               >
-                <Text
-                  style={[
-                    styles.keyText,
-                    heldMods.has(m) && styles.keyTextActive,
-                  ]}
-                >
+                <Text style={[styles.keyText, heldMods.has(m) && styles.keyTextActive]}>
                   {MODIFIER_LABEL[m]}
                 </Text>
               </TouchableOpacity>
@@ -464,13 +434,13 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
                 onPress={() => {
                   releaseAllModifiers();
                   connection.key(k.id);
-                  }}
-                >
-                  <Text style={[styles.keyText, styles.fText]}>{k.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                }}
+              >
+                <Text style={[styles.keyText, styles.fText]}>{k.label}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
+        </View>
       )}
 
       {!trayVisible && (

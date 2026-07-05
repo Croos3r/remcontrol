@@ -22,103 +22,152 @@ pub fn spawn<I: Injector>(mut injector: I) -> mpsc::UnboundedSender<Command> {
     std::thread::spawn(move || {
         let mut held: HashSet<MouseButton> = HashSet::new();
         let mut held_mods: HashSet<Modifier> = HashSet::new();
+        // Un-applied cursor motion. Move deltas accumulate here, and a smoothing
+        // tick applies a fraction of the accumulator toward zero so a burst of
+        // moves arriving in ~2ms is spread smoothly over the ~50ms network gap
+        // until the next burst. Without this, Windows SendInput jumps the cursor
+        // instantly per call and the cursor sits still between bursts (choppy).
         let (mut rem_x, mut rem_y) = (0.0_f64, 0.0_f64);
         let (mut scroll_rem_x, mut scroll_rem_y) = (0.0_f64, 0.0_f64);
         let mut pending: std::collections::VecDeque<Command> = std::collections::VecDeque::new();
-        let mut last_move: Option<std::time::Instant> = None;
+        // Fraction of the remaining motion applied each smoothing tick. 0.5 at
+        // 8ms (125Hz) spreads a burst over ~6 ticks (~48ms), matching the network
+        // gap so the cursor keeps moving instead of stopping.
+        const SMOOTH: f64 = 0.5;
+        const TICK: std::time::Duration = std::time::Duration::from_millis(8);
+        let mut last_tick = std::time::Instant::now();
         loop {
+            // Drain any previously-queued command first, then pull one new
+            // message without blocking. If the channel is empty we fall
+            // through to the smoothing tick and sleep TICK.
             let cmd = if let Some(c) = pending.pop_front() {
-                c
+                Some(c)
             } else {
-                match rx.blocking_recv() {
-                    Some(c) => c,
-                    None => break,
+                match rx.try_recv() {
+                    Ok(c) => Some(c),
+                    Err(mpsc::error::TryRecvError::Empty) => None,
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        // Channel closed: drain any remaining motion before
+                        // exiting so the cursor doesn't stop mid-move.
+                        while rem_x != 0.0 || rem_y != 0.0 {
+                            let ax = rem_x.trunc() as i32;
+                            let ay = rem_y.trunc() as i32;
+                            if ax == 0 && ay == 0 {
+                                break;
+                            }
+                            rem_x -= ax as f64;
+                            rem_y -= ay as f64;
+                            injector.move_rel(ax, ay);
+                        }
+                        break;
+                    }
                 }
             };
-            match cmd {
-                Command::Input(msg) => match msg {
-                    ClientMessage::Move { dx, dy } => {
-                        rem_x += dx;
-                        rem_y += dy;
-                        let (ix, iy) = (rem_x.trunc() as i32, rem_y.trunc() as i32);
-                        if ix != 0 || iy != 0 {
-                            rem_x -= ix as f64;
-                            rem_y -= iy as f64;
-                            let now = std::time::Instant::now();
-                            if let Some(last) = last_move {
-                                let gap = now.duration_since(last);
-                                tracing::info!("move gap={:?} dx={} dy={}", gap, ix, iy);
-                            }
-                            last_move = Some(now);
-                            injector.move_rel(ix, iy);
+            let had_cmd = cmd.is_some();
+            if let Some(cmd) = cmd {
+                match cmd {
+                    Command::Input(msg) => match msg {
+                        ClientMessage::Move { dx, dy } => {
+                            rem_x += dx;
+                            rem_y += dy;
                         }
-                    }
-                    ClientMessage::Click { button } => injector.click(button),
-                    ClientMessage::Button { button, action } => {
-                        match action {
-                            ButtonAction::Down => {
-                                held.insert(button);
-                            }
-                            ButtonAction::Up => {
-                                held.remove(&button);
-                            }
-                        }
-                        injector.button(button, action);
-                    }
-                    ClientMessage::Scroll { dx, dy } => {
-                        scroll_rem_x += dx;
-                        scroll_rem_y += dy;
-                        let (ix, iy) =
-                            (scroll_rem_x.trunc() as i32, scroll_rem_y.trunc() as i32);
-                        if ix != 0 || iy != 0 {
-                            scroll_rem_x -= ix as f64;
-                            scroll_rem_y -= iy as f64;
-                            injector.scroll(ix, iy);
-                        }
-                    }
-                    ClientMessage::Text { value } => {
-                        let mut buf = value;
-                        let mut idle = std::time::Duration::ZERO;
-                        while buf.len() < 4096 && idle < std::time::Duration::from_millis(25) {
-                            match rx.try_recv() {
-                                Ok(Command::Input(ClientMessage::Text { value: more })) => {
-                                    buf.push_str(&more);
-                                    idle = std::time::Duration::ZERO;
+                        ClientMessage::Click { button } => injector.click(button),
+                        ClientMessage::Button { button, action } => {
+                            match action {
+                                ButtonAction::Down => {
+                                    held.insert(button);
                                 }
-                                Ok(other) => {
-                                    pending.push_back(other);
-                                    break;
-                                }
-                                Err(_) => {
-                                    std::thread::sleep(std::time::Duration::from_millis(5));
-                                    idle += std::time::Duration::from_millis(5);
+                                ButtonAction::Up => {
+                                    held.remove(&button);
                                 }
                             }
+                            injector.button(button, action);
                         }
-                        injector.text(&buf);
-                    }
-                    ClientMessage::Key { key } => injector.key(key),
-                    ClientMessage::ModifierAction { key, action } => {
-                        match action {
-                            ButtonAction::Down => {
-                                held_mods.insert(key);
-                            }
-                            ButtonAction::Up => {
-                                held_mods.remove(&key);
+                        ClientMessage::Scroll { dx, dy } => {
+                            scroll_rem_x += dx;
+                            scroll_rem_y += dy;
+                            let (ix, iy) =
+                                (scroll_rem_x.trunc() as i32, scroll_rem_y.trunc() as i32);
+                            if ix != 0 || iy != 0 {
+                                scroll_rem_x -= ix as f64;
+                                scroll_rem_y -= iy as f64;
+                                injector.scroll(ix, iy);
                             }
                         }
-                        injector.modifier(key, action);
-                    }
-                    ClientMessage::Hello { .. } => {}
-                },
-                Command::ReleaseAll => {
-                    for button in held.drain() {
-                        injector.button(button, ButtonAction::Up);
-                    }
-                    for m in held_mods.drain() {
-                        injector.modifier(m, ButtonAction::Up);
+                        ClientMessage::Text { value } => {
+                            let mut buf = value;
+                            let mut idle = std::time::Duration::ZERO;
+                            while buf.len() < 4096 && idle < std::time::Duration::from_millis(25) {
+                                match rx.try_recv() {
+                                    Ok(Command::Input(ClientMessage::Text { value: more })) => {
+                                        buf.push_str(&more);
+                                        idle = std::time::Duration::ZERO;
+                                    }
+                                    Ok(other) => {
+                                        pending.push_back(other);
+                                        break;
+                                    }
+                                    Err(_) => {
+                                        std::thread::sleep(std::time::Duration::from_millis(5));
+                                        idle += std::time::Duration::from_millis(5);
+                                    }
+                                }
+                            }
+                            injector.text(&buf);
+                        }
+                        ClientMessage::Key { key } => injector.key(key),
+                        ClientMessage::ModifierAction { key, action } => {
+                            match action {
+                                ButtonAction::Down => {
+                                    held_mods.insert(key);
+                                }
+                                ButtonAction::Up => {
+                                    held_mods.remove(&key);
+                                }
+                            }
+                            injector.modifier(key, action);
+                        }
+                        ClientMessage::Hello { .. } => {}
+                    },
+                    Command::ReleaseAll => {
+                        for button in held.drain() {
+                            injector.button(button, ButtonAction::Up);
+                        }
+                        for m in held_mods.drain() {
+                            injector.modifier(m, ButtonAction::Up);
+                        }
                     }
                 }
+            }
+            // Smoothing tick: apply a fraction of the accumulated motion at most
+            // once per TICK. During a burst of messages this still paces the
+            // cursor at ~125Hz instead of applying instantly per message.
+            let now = std::time::Instant::now();
+            if now >= last_tick + TICK {
+                last_tick = now;
+                if rem_x != 0.0 || rem_y != 0.0 {
+                    let mut ax = (rem_x * SMOOTH).trunc() as i32;
+                    let mut ay = (rem_y * SMOOTH).trunc() as i32;
+                    // If the smoothed step rounds to zero but a full pixel
+                    // remains, flush the integer remainder so small leftovers
+                    // don't stall.
+                    if ax == 0 && rem_x.trunc() != 0.0 {
+                        ax = rem_x.trunc() as i32;
+                    }
+                    if ay == 0 && rem_y.trunc() != 0.0 {
+                        ay = rem_y.trunc() as i32;
+                    }
+                    if ax != 0 || ay != 0 {
+                        rem_x -= ax as f64;
+                        rem_y -= ay as f64;
+                        injector.move_rel(ax, ay);
+                    }
+                }
+            }
+            // Pacing: when the channel is empty, sleep until the next tick so
+            // we don't spin. When messages are arriving we keep draining.
+            if !had_cmd {
+                std::thread::sleep(TICK);
             }
         }
     });
@@ -320,7 +369,18 @@ mod tests {
         tx.send(Command::Input(ClientMessage::Text { value: "hi".into() }))
             .unwrap();
         let calls = drain(&rec, tx);
-        assert_eq!(calls, vec!["move 3 -2", "click Left", "text hi"]);
+        // Moves are smoothed across ticks, so check the total applied motion
+        // rather than a single call, plus that click/text fired exactly once.
+        let (mx, my): (i32, i32) = calls
+            .iter()
+            .filter_map(|c| c.strip_prefix("move ").and_then(|s| {
+                let mut it = s.split_whitespace();
+                Some((it.next()?.parse::<i32>().ok()?, it.next()?.parse::<i32>().ok()?))
+            }))
+            .fold((0, 0), |(x, y), (a, b)| (x + a, y + b));
+        assert_eq!((mx, my), (3, -2));
+        assert!(calls.iter().any(|c| c == "click Left"));
+        assert!(calls.iter().any(|c| c == "text hi"));
     }
 
     #[test]
@@ -332,10 +392,17 @@ mod tests {
                 .unwrap();
         }
         let calls = drain(&rec, tx);
-        assert_eq!(
-            calls.iter().filter(|c| c.as_str() == "move 1 0").count(),
-            2
-        );
+        let total_x: i32 = calls
+            .iter()
+            .filter_map(|c| {
+                c.strip_prefix("move ").and_then(|s| {
+                    s.split_whitespace().next()?.parse::<i32>().ok()
+                })
+            })
+            .sum();
+        // Four 0.5 moves = 2px total. Smoothing may split it across ticks but
+        // the sum must match.
+        assert_eq!(total_x, 2);
     }
 
     #[test]

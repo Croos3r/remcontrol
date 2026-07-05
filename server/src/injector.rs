@@ -155,22 +155,32 @@ impl Injector for EnigoInjector {
         if value.is_empty() {
             return;
         }
-        if value.is_ascii() {
-            let mut cmd = std::process::Command::new("xdotool");
-            cmd.args(["type", "--clearmodifiers", "--delay", "0", value]);
-            if let Err(e) = cmd.status() {
-                tracing::warn!("xdotool type failed: {e}");
+        #[cfg(target_os = "linux")]
+        {
+            if value.is_ascii() {
+                let mut cmd = std::process::Command::new("xdotool");
+                cmd.args(["type", "--clearmodifiers", "--delay", "0", value]);
+                if let Err(e) = cmd.status() {
+                    tracing::warn!("xdotool type failed: {e}");
+                }
+                return;
             }
-            return;
+            for ch in value.chars() {
+                let code = ch as u32;
+                let arg = format!("0x{code:04X}");
+                let status = std::process::Command::new("xdotool")
+                    .args(["key", "--clearmodifiers", &arg])
+                    .status();
+                if let Err(e) = status {
+                    tracing::warn!(?ch, "xdotool key failed: {e}");
+                }
+            }
         }
-        for ch in value.chars() {
-            let code = ch as u32;
-            let arg = format!("0x{code:04X}");
-            let status = std::process::Command::new("xdotool")
-                .args(["key", "--clearmodifiers", &arg])
-                .status();
-            if let Err(e) = status {
-                tracing::warn!(?ch, "xdotool key failed: {e}");
+        #[cfg(not(target_os = "linux"))]
+        {
+            use enigo::Keyboard;
+            if let Err(e) = self.0.text(value) {
+                tracing::warn!("enigo text failed: {e:?}");
             }
         }
     }

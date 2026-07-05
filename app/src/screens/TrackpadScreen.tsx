@@ -19,7 +19,7 @@ interface Props {
   onDisconnect: () => void;
 }
 
-type Status = 'connected' | 'reconnecting';
+type Status = 'connected' | 'reconnecting' | 'reauth';
 
 const SENSITIVITIES = [
   { label: 'Slow', value: 0.8 },
@@ -119,6 +119,15 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
   }, [connection]);
 
   useEffect(() => {
+    const scheduleReconnect = () => {
+      if (retryRef.current >= RECONNECT_DELAYS_MS.length) {
+        onDisconnect();
+        return;
+      }
+      const delay = RECONNECT_DELAYS_MS[retryRef.current];
+      retryRef.current += 1;
+      retryTimerRef.current = setTimeout(() => connection.connect(), delay);
+    };
     connection.setEvents({
       onClose: () => {
         setStatus('reconnecting');
@@ -132,16 +141,13 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
       onError: () => {
         scheduleReconnect();
       },
+      onAuthFailure: () => {
+        // Token rotated server-side: stop hammering the server and surface a
+        // re-pair prompt instead of retrying blindly (M-5).
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+        setStatus('reauth');
+      },
     });
-    const scheduleReconnect = () => {
-      if (retryRef.current >= RECONNECT_DELAYS_MS.length) {
-        onDisconnect();
-        return;
-      }
-      const delay = RECONNECT_DELAYS_MS[retryRef.current];
-      retryRef.current += 1;
-      retryTimerRef.current = setTimeout(() => connection.connect(), delay);
-    };
     return () => {
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
       connection.setEvents({});
@@ -323,6 +329,15 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
         </View>
       )}
 
+      {status === 'reauth' && (
+        <View style={styles.reauthBanner}>
+          <Text style={styles.bannerText}>Token rejected. Re-pair on the Connect screen.</Text>
+          <TouchableOpacity style={styles.reauthButton} onPress={onDisconnect}>
+            <Text style={styles.reauthButtonText}>Re-pair</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <View style={[styles.topBar, { paddingTop: insets.top }]} pointerEvents="box-none">
         <View style={styles.controlCluster} pointerEvents="auto">
           <ControlButton label="⌨" active={keyboardOpen} onPress={toggleKeyboard} />
@@ -488,6 +503,24 @@ const styles = StyleSheet.create({
   bannerText: {
     color: '#ffd9a0',
     fontSize: 14,
+  },
+  reauthBanner: {
+    backgroundColor: '#5a1a1a',
+    paddingTop: 48,
+    paddingBottom: 12,
+    alignItems: 'center',
+    gap: 10,
+  },
+  reauthButton: {
+    backgroundColor: '#4da6ff',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  reauthButtonText: {
+    color: '#0a0a0a',
+    fontSize: 14,
+    fontWeight: '600',
   },
   pad: {
     flex: 1,

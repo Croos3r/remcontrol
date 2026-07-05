@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const store = new Map<string, string>();
+const secure = new Map<string, string>();
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
   default: {
@@ -17,6 +18,16 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 
+vi.mock('expo-secure-store', () => ({
+  setItemAsync: async (key: string, value: string) => {
+    secure.set(key, value);
+  },
+  getItemAsync: async (key: string) => secure.get(key) ?? null,
+  deleteItemAsync: async (key: string) => {
+    secure.delete(key);
+  },
+}));
+
 import {
   forgetConnection,
   loadLastConnection,
@@ -29,12 +40,28 @@ function server(ip: string, port = 17890, name?: string): ServerInfo {
   return { ip, port, token: 'tok', name };
 }
 
-describe('saveConnection / loadRecentConnections', () => {
-  beforeEach(() => store.clear());
+function secureKey(ip: string, port: number): string {
+  return `${ip}:${port}`;
+}
 
-  it('stores and reloads a connection', async () => {
+describe('saveConnection / loadRecentConnections', () => {
+  beforeEach(() => {
+    store.clear();
+    secure.clear();
+  });
+
+  it('stores and reloads a connection (token via SecureStore)', async () => {
     await saveConnection(server('192.168.1.10', 17890, 'valiant'));
+    expect(secure.get(secureKey('192.168.1.10', 17890))).toBe('tok');
     expect(await loadRecentConnections()).toEqual([server('192.168.1.10', 17890, 'valiant')]);
+  });
+
+  it('does not leak the token into AsyncStorage', async () => {
+    await saveConnection(server('192.168.1.10', 17890, 'valiant'));
+    const recentRaw = store.get('remcontrol:recent-connections') ?? '';
+    const lastRaw = store.get('remcontrol:last-connection') ?? '';
+    expect(recentRaw).not.toContain('"tok"');
+    expect(lastRaw).not.toContain('"tok"');
   });
 
   it('dedups by ip:port and keeps the newest first', async () => {
@@ -66,10 +93,21 @@ describe('saveConnection / loadRecentConnections', () => {
     await saveConnection(server('192.168.1.10', 17890, '   '));
     expect((await loadRecentConnections())[0].name).toBeUndefined();
   });
+
+  it('drops recent entries whose token is missing from SecureStore', async () => {
+    await saveConnection(server('192.168.1.10', 17890));
+    await saveConnection(server('192.168.1.20', 17890));
+    secure.delete(secureKey('192.168.1.10', 17890));
+    const recent = await loadRecentConnections();
+    expect(recent.map((s) => s.ip)).toEqual(['192.168.1.20']);
+  });
 });
 
 describe('loadLastConnection', () => {
-  beforeEach(() => store.clear());
+  beforeEach(() => {
+    store.clear();
+    secure.clear();
+  });
 
   it('returns the last saved connection', async () => {
     await saveConnection(server('192.168.1.10', 17890, 'valiant'));
@@ -87,14 +125,19 @@ describe('loadLastConnection', () => {
 });
 
 describe('forgetConnection', () => {
-  beforeEach(() => store.clear());
+  beforeEach(() => {
+    store.clear();
+    secure.clear();
+  });
 
-  it('removes the matching server by ip:port', async () => {
+  it('removes the matching server and its token by ip:port', async () => {
     await saveConnection(server('192.168.1.10'));
     await saveConnection(server('192.168.1.20'));
     const remaining = await forgetConnection(server('192.168.1.10'));
     expect(remaining.map((s) => s.ip)).toEqual(['192.168.1.20']);
     expect((await loadRecentConnections()).map((s) => s.ip)).toEqual(['192.168.1.20']);
+    expect(secure.has(secureKey('192.168.1.10', 17890))).toBe(false);
+    expect(secure.has(secureKey('192.168.1.20', 17890))).toBe(true);
   });
 
   it('does not match on ip alone when port differs', async () => {
@@ -112,14 +155,9 @@ describe('forgetConnection', () => {
 });
 
 describe('loadRecentConnections validation', () => {
-  beforeEach(() => store.clear());
-
-  it('drops entries missing required fields', async () => {
-    store.set(
-      'remcontrol:recent-connections',
-      JSON.stringify([{ ip: '1.2.3.4' }, server('1.2.3.5')]),
-    );
-    expect((await loadRecentConnections()).map((s) => s.ip)).toEqual(['1.2.3.5']);
+  beforeEach(() => {
+    store.clear();
+    secure.clear();
   });
 
   it('returns an empty list when storage is not an array', async () => {

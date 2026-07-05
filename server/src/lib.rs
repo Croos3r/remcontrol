@@ -1,9 +1,11 @@
 pub mod config;
+pub mod crypto;
 pub mod injector;
 pub mod protocol;
 pub mod ws;
 
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 const DEFAULT_HOSTNAME: &str = "remcontrol";
 
@@ -18,9 +20,22 @@ pub fn sanitize_hostname(raw: Option<String>) -> String {
     trimmed.unwrap_or_else(|| DEFAULT_HOSTNAME.to_string())
 }
 
-/// Build the JSON payload encoded into the pairing QR code.
+/// A short, non-secret fingerprint of the pairing token, shown in the
+/// terminal so the user can confirm the QR they scanned belongs to this
+/// server without exposing the token itself (H-3). First 8 hex chars of
+/// SHA-256(token).
+pub fn token_fingerprint(token: &str) -> String {
+    let digest = Sha256::digest(token.as_bytes());
+    hex::encode(&digest[..4])
+}
+
+/// Build the JSON payload encoded into the pairing QR code. Includes the
+/// protocol version (M-3) and the long-lived PSK token, which is safe to
+/// encode here because it is never transmitted on the wire — it
+/// authenticates the ephemeral ECDH handshake (H-3, C-1).
 pub fn pairing_payload(ip: &str, port: u16, token: &str, name: &str) -> String {
     json!({
+        "v": crypto::PROTOCOL_VERSION,
         "ip": ip,
         "port": port,
         "token": token,

@@ -17,8 +17,13 @@ pub trait Injector: Send + 'static {
     fn modifier(&mut self, key: Modifier, action: ButtonAction);
 }
 
-pub fn spawn<I: Injector>(mut injector: I) -> mpsc::UnboundedSender<Command> {
-    let (tx, mut rx) = mpsc::unbounded_channel::<Command>();
+/// Capacity of the bounded input channel. The WebSocket task applies
+/// backpressure to the client when the injector falls behind this instead
+/// of growing without bound (M-4). On overflow the connection is closed.
+const CHANNEL_CAPACITY: usize = 256;
+
+pub fn spawn<I: Injector>(mut injector: I) -> mpsc::Sender<Command> {
+    let (tx, mut rx) = mpsc::channel::<Command>(CHANNEL_CAPACITY);
     std::thread::spawn(move || {
         let mut held: HashSet<MouseButton> = HashSet::new();
         let mut held_mods: HashSet<Modifier> = HashSet::new();
@@ -176,7 +181,7 @@ pub fn spawn<I: Injector>(mut injector: I) -> mpsc::UnboundedSender<Command> {
 
 pub struct EnigoInjector(enigo::Enigo);
 
-pub fn spawn_enigo() -> anyhow::Result<mpsc::UnboundedSender<Command>> {
+pub fn spawn_enigo() -> anyhow::Result<mpsc::Sender<Command>> {
     // Send raw relative mouse moves on Windows instead of GetCursorPos + absolute
     // move. The absolute path reads the cursor position on every event, which is
     // racy and slow during fast continuous movement and reads as laggy. Relative moves
@@ -361,7 +366,7 @@ mod tests {
         }
     }
 
-    fn drain(rec: &Recorder, tx: tokio::sync::mpsc::UnboundedSender<Command>) -> Vec<String> {
+    fn drain(rec: &Recorder, tx: tokio::sync::mpsc::Sender<Command>) -> Vec<String> {
         drop(tx);
         std::thread::sleep(std::time::Duration::from_millis(50));
         rec.0.lock().unwrap().clone()
@@ -371,15 +376,15 @@ mod tests {
     fn dispatches_input_commands() {
         let rec = Recorder::default();
         let tx = spawn(rec.clone());
-        tx.send(Command::Input(ClientMessage::Move { dx: 3.0, dy: -2.0 }))
+        tx.blocking_send(Command::Input(ClientMessage::Move { dx: 3.0, dy: -2.0 }))
             .unwrap();
-        tx.send(Command::Input(ClientMessage::Click {
+        tx.blocking_send(Command::Input(ClientMessage::Click {
             button: MouseButton::Left,
         }))
         .unwrap();
-        tx.send(Command::Input(ClientMessage::Hello { token: "x".into() }))
+        tx.blocking_send(Command::Input(ClientMessage::Hello { token: "x".into() }))
             .unwrap();
-        tx.send(Command::Input(ClientMessage::Text { value: "hi".into() }))
+        tx.blocking_send(Command::Input(ClientMessage::Text { value: "hi".into() }))
             .unwrap();
         let calls = drain(&rec, tx);
         // Moves are smoothed across ticks, so check the total applied motion
@@ -406,7 +411,7 @@ mod tests {
         let rec = Recorder::default();
         let tx = spawn(rec.clone());
         for _ in 0..4 {
-            tx.send(Command::Input(ClientMessage::Move { dx: 0.5, dy: 0.0 }))
+            tx.blocking_send(Command::Input(ClientMessage::Move { dx: 0.5, dy: 0.0 }))
                 .unwrap();
         }
         let calls = drain(&rec, tx);
@@ -426,12 +431,12 @@ mod tests {
     fn release_all_releases_held_buttons() {
         let rec = Recorder::default();
         let tx = spawn(rec.clone());
-        tx.send(Command::Input(ClientMessage::Button {
+        tx.blocking_send(Command::Input(ClientMessage::Button {
             button: MouseButton::Left,
             action: ButtonAction::Down,
         }))
         .unwrap();
-        tx.send(Command::ReleaseAll).unwrap();
+        tx.blocking_send(Command::ReleaseAll).unwrap();
         let calls = drain(&rec, tx);
         assert_eq!(calls, vec!["button Left Down", "button Left Up"]);
     }
@@ -440,12 +445,12 @@ mod tests {
     fn release_all_releases_held_modifiers() {
         let rec = Recorder::default();
         let tx = spawn(rec.clone());
-        tx.send(Command::Input(ClientMessage::ModifierAction {
+        tx.blocking_send(Command::Input(ClientMessage::ModifierAction {
             key: Modifier::Ctrl,
             action: ButtonAction::Down,
         }))
         .unwrap();
-        tx.send(Command::ReleaseAll).unwrap();
+        tx.blocking_send(Command::ReleaseAll).unwrap();
         let calls = drain(&rec, tx);
         assert_eq!(calls, vec!["modifier Ctrl Down", "modifier Ctrl Up"]);
     }

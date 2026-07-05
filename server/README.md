@@ -21,7 +21,16 @@ On startup the server prints its address, the pairing token, and a QR code.
 Scan the QR code with the remcontrol app, pick the server from the discovered
 list, or type the IP/port/token manually.
 
-The server is also advertised on the LAN over mDNS as `_remcontrol._tcp`.
+The server is advertised on the LAN over mDNS as `_remcontrol._tcp` unless you
+disable it (see below).
+
+## Flags
+
+- `--reset-token` — rotate the pairing token; previously paired phones must
+  re-pair.
+- `--no-mdns` — do not advertise the service over mDNS for this run, even if
+  `advertise_mdns` is true in the config. Useful on networks where multicast
+  is blocked or unwanted.
 
 ## Configuration
 
@@ -30,12 +39,39 @@ Created on first run:
 - Linux: `~/.config/remcontrol/config.toml`
 - Windows: `%APPDATA%\remcontrol\config.toml`
 
-Contains the pairing `token` and the `port` (default `17890`).
+```toml
+token        = "..."            # pairing token (32 random chars)
+port         = 17890           # WebSocket port
+bind_addr    = "192.168.1.10"  # bind address; defaults to the LAN IP
+advertise_mdns = true          # set false to disable mDNS permanently
+allowed_origins = []           # WebSocket Origin allowlist (see below)
+```
 
-Rotate the pairing token (previously paired phones must re-pair):
+The config file is created with mode `0600` on Unix.
 
-```sh
-cargo run --release -- --reset-token
+### Bind address
+
+By default the server binds to the discovered LAN IP, so it is reachable from
+the phone but not exposed on every interface. Set `bind_addr` to bind elsewhere
+(for example `"127.0.0.1"` for local-only, or `"0.0.0.0"` for all interfaces).
+
+### mDNS discovery
+
+mDNS advertisement is on by default. Disable it for a single run with
+`--no-mdns`, or permanently by setting `advertise_mdns = false` in the config.
+When mDNS is off, pair by scanning the QR code or entering the IP and token
+manually.
+
+### Origin allowlist
+
+To defend against cross-site WebSocket hijacking from a browser, the server
+rejects WebSocket upgrades whose `Origin` header is not in `allowed_origins`.
+Clients that send no `Origin` (the native app, curl) are always allowed. With
+an empty list (the default) every browser origin is rejected. Add an origin
+only if you build a web-based client:
+
+```toml
+allowed_origins = ["https://app.example"]
 ```
 
 ## Notes

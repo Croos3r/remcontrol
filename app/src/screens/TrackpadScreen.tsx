@@ -10,11 +10,7 @@ import {
   View,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import {
-  runOnJS,
-  useFrameCallback,
-  useSharedValue,
-} from 'react-native-reanimated';
+import { runOnJS, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Connection } from '../connection';
 
@@ -99,32 +95,28 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
     sensitivitySV.value = sensitivity;
   }, [sensitivity, sensitivitySV]);
 
-  const sendMove = useCallback(
-    (dx: number, dy: number) => connection.move(dx, dy),
-    [connection],
-  );
-  const sendScroll = useCallback(
-    (dx: number, dy: number) => connection.scroll(dx, dy),
-    [connection],
-  );
-
-  useFrameCallback(() => {
-    'worklet';
-    const dx = moveDx.value;
-    const dy = moveDy.value;
-    if (dx !== 0 || dy !== 0) {
-      moveDx.value = 0;
-      moveDy.value = 0;
-      runOnJS(sendMove)(dx, dy);
-    }
-    const sx = scrollDx.value;
-    const sy = scrollDy.value;
-    if (sx !== 0 || sy !== 0) {
-      scrollDx.value = 0;
-      scrollDy.value = 0;
-      runOnJS(sendScroll)(sx, sy);
-    }
-  });
+  // Move send cadence is driven from the JS thread so it stays at a steady
+  // ~16ms regardless of UI-thread frame bursts. The UI-thread worklet just
+  // accumulates deltas into SharedValues; this interval drains and ships them.
+  useEffect(() => {
+    const id = setInterval(() => {
+      const dx = moveDx.value;
+      const dy = moveDy.value;
+      if (dx !== 0 || dy !== 0) {
+        moveDx.value = moveDx.value - dx;
+        moveDy.value = moveDy.value - dy;
+        connection.move(dx, dy);
+      }
+      const sx = scrollDx.value;
+      const sy = scrollDy.value;
+      if (sx !== 0 || sy !== 0) {
+        scrollDx.value = scrollDx.value - sx;
+        scrollDy.value = scrollDy.value - sy;
+        connection.scroll(sx, sy);
+      }
+    }, 16);
+    return () => clearInterval(id);
+  }, [connection]);
 
   useEffect(() => {
     connection.setEvents({

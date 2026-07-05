@@ -25,7 +25,6 @@ pub fn spawn<I: Injector>(mut injector: I) -> mpsc::UnboundedSender<Command> {
         let (mut rem_x, mut rem_y) = (0.0_f64, 0.0_f64);
         let (mut scroll_rem_x, mut scroll_rem_y) = (0.0_f64, 0.0_f64);
         let mut pending: std::collections::VecDeque<Command> = std::collections::VecDeque::new();
-        let mut last_move: Option<std::time::Instant> = None;
         loop {
             let cmd = if let Some(c) = pending.pop_front() {
                 c
@@ -44,12 +43,6 @@ pub fn spawn<I: Injector>(mut injector: I) -> mpsc::UnboundedSender<Command> {
                         if ix != 0 || iy != 0 {
                             rem_x -= ix as f64;
                             rem_y -= iy as f64;
-                            let now = std::time::Instant::now();
-                            if let Some(last) = last_move {
-                                let gap = now - last;
-                                tracing::info!("move gap={:?} dx={} dy={}", gap, ix, iy);
-                            }
-                            last_move = Some(now);
                             injector.move_rel(ix, iy);
                         }
                     }

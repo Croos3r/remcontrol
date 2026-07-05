@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
   Keyboard,
@@ -10,6 +10,12 @@ import {
   View,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import {
+  runOnJS,
+  useFrameCallback,
+  useSharedValue,
+} from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Connection } from '../connection';
 
 interface Props {
@@ -29,8 +35,6 @@ const SCROLL_SENSITIVITY = 0.05;
 const DOUBLE_TAP_DRAG_WINDOW_MS = 300;
 const RECONNECT_DELAYS_MS = [1000, 2000, 4000, 8000, 16000];
 const KEYBOARD_SENTINEL = ' ';
-const SAFE_BOTTOM = 24;
-const SAFE_TOP = 32;
 
 const MODIFIERS = ['ctrl', 'alt', 'shift', 'super'] as const;
 type ModifierKey = (typeof MODIFIERS)[number];
@@ -77,13 +81,50 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
   const [trayVisible, setTrayVisible] = useState(false);
   const [trayPos, setTrayPos] = useState<{ x: number; y: number } | null>(null);
 
+  const insets = useSafeAreaInsets();
+
+  const moveDx = useSharedValue(0);
+  const moveDy = useSharedValue(0);
+  const scrollDx = useSharedValue(0);
+  const scrollDy = useSharedValue(0);
+  const sensitivitySV = useSharedValue(sensitivity);
+
   const inputRef = useRef<TextInput>(null);
   const lastTapRef = useRef(0);
   const draggingRef = useRef(false);
   const retryRef = useRef(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sensitivityRef = useRef(sensitivity);
-  sensitivityRef.current = sensitivity;
+
+  useEffect(() => {
+    sensitivitySV.value = sensitivity;
+  }, [sensitivity, sensitivitySV]);
+
+  const sendMove = useCallback(
+    (dx: number, dy: number) => connection.move(dx, dy),
+    [connection],
+  );
+  const sendScroll = useCallback(
+    (dx: number, dy: number) => connection.scroll(dx, dy),
+    [connection],
+  );
+
+  useFrameCallback(() => {
+    'worklet';
+    const dx = moveDx.value;
+    const dy = moveDy.value;
+    if (dx !== 0 || dy !== 0) {
+      moveDx.value = 0;
+      moveDy.value = 0;
+      runOnJS(sendMove)(dx, dy);
+    }
+    const sx = scrollDx.value;
+    const sy = scrollDy.value;
+    if (sx !== 0 || sy !== 0) {
+      scrollDx.value = 0;
+      scrollDy.value = 0;
+      runOnJS(sendScroll)(sx, sy);
+    }
+  });
 
   useEffect(() => {
     connection.setEvents({
@@ -135,30 +176,40 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
     };
   }, []);
 
+  const onMoveStart = useCallback(() => {
+    if (Date.now() - lastTapRef.current < DOUBLE_TAP_DRAG_WINDOW_MS) {
+      draggingRef.current = true;
+      connection.buttonDown('left');
+    }
+  }, [connection]);
+  const onMoveEnd = useCallback(() => {
+    if (draggingRef.current) {
+      draggingRef.current = false;
+      connection.buttonUp('left');
+    }
+  }, [connection]);
+
   const movePan = Gesture.Pan()
     .maxPointers(1)
-    .runOnJS(true)
+    .activeOffsetX(3)
+    .activeOffsetY(3)
     .onStart(() => {
-      if (Date.now() - lastTapRef.current < DOUBLE_TAP_DRAG_WINDOW_MS) {
-        draggingRef.current = true;
-        connection.buttonDown('left');
-      }
+      'worklet';
+      runOnJS(onMoveStart)();
     })
     .onChange((e) => {
-      connection.move(
-        e.changeX * sensitivityRef.current,
-        e.changeY * sensitivityRef.current,
-      );
+      'worklet';
+      moveDx.value += e.changeX * sensitivitySV.value;
+      moveDy.value += e.changeY * sensitivitySV.value;
     })
     .onEnd(() => {
-      if (draggingRef.current) {
-        draggingRef.current = false;
-        connection.buttonUp('left');
-      }
+      'worklet';
+      runOnJS(onMoveEnd)();
     });
 
   const singleTap = Gesture.Tap()
     .maxDuration(200)
+    .maxDistance(10)
     .runOnJS(true)
     .onEnd((_e, success) => {
       if (!success) return;
@@ -169,6 +220,7 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
   const twoFingerTap = Gesture.Tap()
     .minPointers(2)
     .maxDuration(250)
+    .maxDistance(15)
     .runOnJS(true)
     .onEnd((_e, success) => {
       if (success) connection.click('right');
@@ -177,12 +229,10 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
   const scrollPan = Gesture.Pan()
     .minPointers(2)
     .maxPointers(2)
-    .runOnJS(true)
     .onChange((e) => {
-      connection.scroll(
-        -e.changeX * SCROLL_SENSITIVITY,
-        -e.changeY * SCROLL_SENSITIVITY,
-      );
+      'worklet';
+      scrollDx.value += -e.changeX * SCROLL_SENSITIVITY;
+      scrollDy.value += -e.changeY * SCROLL_SENSITIVITY;
     });
 
   const gesture = Gesture.Race(scrollPan, twoFingerTap, movePan, singleTap);
@@ -265,7 +315,7 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
       const x = Math.max(0, Math.min(win.width - w, e.absoluteX - w / 2));
       const y = Math.max(
         0,
-        Math.min(win.height - h - keyboardHeight - SAFE_BOTTOM, e.absoluteY - 16),
+        Math.min(win.height - h - keyboardHeight - insets.bottom, e.absoluteY - 16),
       );
       setTrayPos({ x, y });
     });
@@ -275,7 +325,7 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
   const trayH = 168;
   const resolvedTrayPos = trayPos ?? {
     x: screen.width - trayW - 16,
-    y: screen.height - trayH - 132 - SAFE_BOTTOM,
+    y: screen.height - trayH - 132 - insets.bottom,
   };
 
   return (
@@ -286,7 +336,7 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
         </View>
       )}
 
-      <View style={styles.topBar} pointerEvents="box-none">
+      <View style={[styles.topBar, { paddingTop: insets.top }]} pointerEvents="box-none">
         <View style={styles.controlCluster} pointerEvents="auto">
           <ControlButton
             label="⌨"
@@ -433,7 +483,7 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
 
       {!trayVisible && (
         <TouchableOpacity
-          style={styles.trayRestore}
+          style={[styles.trayRestore, { bottom: 132 + insets.bottom }]}
           onPress={() => setTrayVisible(true)}
         >
           <Text style={styles.trayRestoreText}>⋯</Text>
@@ -497,7 +547,6 @@ const styles = StyleSheet.create({
     opacity: 0,
   },
   topBar: {
-    paddingTop: SAFE_TOP,
     backgroundColor: '#181818',
   },
   settingsRow: {
@@ -631,7 +680,6 @@ const styles = StyleSheet.create({
   trayRestore: {
     position: 'absolute',
     right: 16,
-    bottom: 132 + SAFE_BOTTOM,
     width: 44,
     height: 44,
     borderRadius: 22,

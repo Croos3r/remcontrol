@@ -2,6 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Connection } from './src/connection';
 import ConnectScreen from './src/screens/ConnectScreen';
 import TrackpadScreen from './src/screens/TrackpadScreen';
@@ -66,16 +67,18 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={styles.root}>
-      <StatusBar style="light" />
-      {screen === 'restoring' && (
-        <View style={styles.center}>
-          <Text style={styles.restoring}>Reconnecting to the last server…</Text>
-        </View>
-      )}
-      {screen === 'connect' && <ConnectScreen onConnected={onConnected} />}
-      {screen === 'trackpad' && connectionRef.current && (
-        <TrackpadScreen connection={connectionRef.current} onDisconnect={onDisconnect} />
-      )}
+      <SafeAreaProvider>
+        <StatusBar style="light" />
+        {screen === 'restoring' && (
+          <View style={styles.center}>
+            <Text style={styles.restoring}>Reconnecting to the last server…</Text>
+          </View>
+        )}
+        {screen === 'connect' && <ConnectScreen onConnected={onConnected} />}
+        {screen === 'trackpad' && connectionRef.current && (
+          <TrackpadScreen connection={connectionRef.current} onDisconnect={onDisconnect} />
+        )}
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

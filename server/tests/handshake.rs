@@ -3,9 +3,7 @@ use remcontrol_server::injector::Command;
 use remcontrol_server::ws::{AppState, router};
 use tokio_tungstenite::tungstenite::Message;
 
-async fn start_server(
-    token: &str,
-) -> (String, tokio::sync::mpsc::UnboundedReceiver<Command>) {
+async fn start_server(token: &str) -> (String, tokio::sync::mpsc::UnboundedReceiver<Command>) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let state = AppState::new(token.to_string(), tx);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -23,7 +21,10 @@ async fn wrong_token_gets_error_and_close() {
         .unwrap();
     let reply = ws.next().await.unwrap().unwrap();
     assert!(reply.to_text().unwrap().contains("error"));
-    assert!(matches!(ws.next().await, Some(Ok(Message::Close(_))) | None));
+    assert!(matches!(
+        ws.next().await,
+        Some(Ok(Message::Close(_))) | None
+    ));
 }
 
 #[tokio::test]
@@ -55,7 +56,10 @@ async fn new_client_replaces_previous() {
         .await
         .unwrap();
     ws2.next().await.unwrap().unwrap();
-    assert!(matches!(ws1.next().await, Some(Ok(Message::Close(_))) | None));
+    assert!(matches!(
+        ws1.next().await,
+        Some(Ok(Message::Close(_))) | None
+    ));
     let cmd = rx.recv().await.unwrap();
     assert!(matches!(cmd, Command::ReleaseAll));
 }

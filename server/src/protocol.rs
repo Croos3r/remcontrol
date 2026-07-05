@@ -65,15 +65,35 @@ pub enum Modifier {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ClientMessage {
-    Hello { token: String },
-    Move { dx: f64, dy: f64 },
-    Click { button: MouseButton },
-    Button { button: MouseButton, action: ButtonAction },
-    Scroll { dx: f64, dy: f64 },
-    Text { value: String },
-    Key { key: SpecialKey },
+    Hello {
+        token: String,
+    },
+    Move {
+        dx: f64,
+        dy: f64,
+    },
+    Click {
+        button: MouseButton,
+    },
+    Button {
+        button: MouseButton,
+        action: ButtonAction,
+    },
+    Scroll {
+        dx: f64,
+        dy: f64,
+    },
+    Text {
+        value: String,
+    },
+    Key {
+        key: SpecialKey,
+    },
     #[serde(rename = "modifier")]
-    ModifierAction { key: Modifier, action: ButtonAction },
+    ModifierAction {
+        key: Modifier,
+        action: ButtonAction,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -135,7 +155,9 @@ mod tests {
             ),
             (
                 r#"{"type":"key","key":"f5"}"#,
-                ClientMessage::Key { key: SpecialKey::F5 },
+                ClientMessage::Key {
+                    key: SpecialKey::F5,
+                },
             ),
             (
                 r#"{"type":"modifier","key":"ctrl","action":"down"}"#,

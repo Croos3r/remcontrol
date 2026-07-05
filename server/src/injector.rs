@@ -177,12 +177,14 @@ pub fn spawn<I: Injector>(mut injector: I) -> mpsc::UnboundedSender<Command> {
 pub struct EnigoInjector(enigo::Enigo);
 
 pub fn spawn_enigo() -> anyhow::Result<mpsc::UnboundedSender<Command>> {
-    let mut settings = enigo::Settings::default();
     // Send raw relative mouse moves on Windows instead of GetCursorPos + absolute
     // move. The absolute path reads the cursor position on every event, which is
     // racy and slow during fast continuous movement and reads as laggy. Relative moves
     // are what a physical mouse sends.
-    settings.windows_subject_to_mouse_speed_and_acceleration_level = true;
+    let settings = enigo::Settings {
+        windows_subject_to_mouse_speed_and_acceleration_level: true,
+        ..enigo::Settings::default()
+    };
     let enigo = enigo::Enigo::new(&settings)?;
     Ok(spawn(EnigoInjector(enigo)))
 }
@@ -362,10 +364,8 @@ mod tests {
             button: MouseButton::Left,
         }))
         .unwrap();
-        tx.send(Command::Input(ClientMessage::Hello {
-            token: "x".into(),
-        }))
-        .unwrap();
+        tx.send(Command::Input(ClientMessage::Hello { token: "x".into() }))
+            .unwrap();
         tx.send(Command::Input(ClientMessage::Text { value: "hi".into() }))
             .unwrap();
         let calls = drain(&rec, tx);
@@ -373,10 +373,15 @@ mod tests {
         // rather than a single call, plus that click/text fired exactly once.
         let (mx, my): (i32, i32) = calls
             .iter()
-            .filter_map(|c| c.strip_prefix("move ").and_then(|s| {
-                let mut it = s.split_whitespace();
-                Some((it.next()?.parse::<i32>().ok()?, it.next()?.parse::<i32>().ok()?))
-            }))
+            .filter_map(|c| {
+                c.strip_prefix("move ").and_then(|s| {
+                    let mut it = s.split_whitespace();
+                    Some((
+                        it.next()?.parse::<i32>().ok()?,
+                        it.next()?.parse::<i32>().ok()?,
+                    ))
+                })
+            })
             .fold((0, 0), |(x, y), (a, b)| (x + a, y + b));
         assert_eq!((mx, my), (3, -2));
         assert!(calls.iter().any(|c| c == "click Left"));
@@ -395,9 +400,8 @@ mod tests {
         let total_x: i32 = calls
             .iter()
             .filter_map(|c| {
-                c.strip_prefix("move ").and_then(|s| {
-                    s.split_whitespace().next()?.parse::<i32>().ok()
-                })
+                c.strip_prefix("move ")
+                    .and_then(|s| s.split_whitespace().next()?.parse::<i32>().ok())
             })
             .sum();
         // Four 0.5 moves = 2px total. Smoothing may split it across ticks but

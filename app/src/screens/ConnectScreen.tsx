@@ -205,7 +205,12 @@ export default function ConnectScreen({ onConnected }: Props) {
           <TouchableOpacity
             style={styles.button}
             onPress={() =>
-              connect({ ip: pendingServer.ip, port: pendingServer.port, token: token.trim() })
+              connect({
+                ip: pendingServer.ip,
+                port: pendingServer.port,
+                token: token.trim(),
+                name: pendingServer.name,
+              })
             }
           >
             <Text style={styles.buttonText}>Connect</Text>

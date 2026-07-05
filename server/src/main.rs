@@ -1,4 +1,4 @@
-use remcontrol_server::{config, injector, ws};
+use remcontrol_server::{config, injector, pairing_payload, sanitize_hostname, ws};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -18,19 +18,8 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let ip = local_ip_address::local_ip()?;
-    let hostname = hostname::get()
-        .ok()
-        .and_then(|h| h.into_string().ok())
-        .map(|h| h.trim_end_matches('.').to_string())
-        .filter(|h| !h.is_empty())
-        .unwrap_or_else(|| "remcontrol".to_string());
-    let payload = serde_json::json!({
-        "ip": ip.to_string(),
-        "port": cfg.port,
-        "token": cfg.token,
-        "name": hostname,
-    })
-    .to_string();
+    let hostname = sanitize_hostname(hostname::get().ok().and_then(|h| h.into_string().ok()));
+    let payload = pairing_payload(&ip.to_string(), cfg.port, &cfg.token, &hostname);
 
     println!("remcontrol server");
     println!("  host    : {hostname}");

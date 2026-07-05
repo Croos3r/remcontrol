@@ -121,7 +121,13 @@ pub fn spawn<I: Injector>(mut injector: I) -> mpsc::UnboundedSender<Command> {
 pub struct EnigoInjector(enigo::Enigo);
 
 pub fn spawn_enigo() -> anyhow::Result<mpsc::UnboundedSender<Command>> {
-    let enigo = enigo::Enigo::new(&enigo::Settings::default())?;
+    let mut settings = enigo::Settings::default();
+    // Send raw relative mouse moves on Windows instead of GetCursorPos + absolute
+    // move. The absolute path reads the cursor position on every event, which is
+    // racy and slow during fast continuous movement and reads as laggy. Relative moves
+    // are what a physical mouse sends.
+    settings.windows_subject_to_mouse_speed_and_acceleration_level = true;
+    let enigo = enigo::Enigo::new(&settings)?;
     Ok(spawn(EnigoInjector(enigo)))
 }
 

@@ -32,6 +32,7 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
   const [sensitivity, setSensitivity] = useState<number>(1.5);
   const [showSettings, setShowSettings] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [inputValue, setInputValue] = useState(KEYBOARD_SENTINEL);
 
   const inputRef = useRef<TextInput>(null);
   const lastTapRef = useRef(0);
@@ -132,14 +133,40 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
   };
 
   const onChangeText = (text: string) => {
-    if (text.length > KEYBOARD_SENTINEL.length) {
-      connection.text(text.slice(KEYBOARD_SENTINEL.length));
+    const prev = inputValue;
+    const prevSuffix = prev.startsWith(KEYBOARD_SENTINEL)
+      ? prev.slice(KEYBOARD_SENTINEL.length)
+      : prev;
+    const suffix = text.startsWith(KEYBOARD_SENTINEL)
+      ? text.slice(KEYBOARD_SENTINEL.length)
+      : text;
+    if (suffix === prevSuffix) {
+      setInputValue(text);
+      return;
     }
-    inputRef.current?.setNativeProps({ text: KEYBOARD_SENTINEL });
+    if (
+      suffix.length > prevSuffix.length &&
+      suffix.startsWith(prevSuffix)
+    ) {
+      connection.text(suffix.slice(prevSuffix.length));
+    } else if (
+      prevSuffix.length > suffix.length &&
+      prevSuffix.startsWith(suffix)
+    ) {
+      const removed = prevSuffix.length - suffix.length;
+      for (let i = 0; i < removed; i++) connection.key('backspace');
+    } else {
+      for (let i = 0; i < prevSuffix.length; i++) connection.key('backspace');
+      if (suffix.length > 0) connection.text(suffix);
+    }
+    setInputValue(text);
   };
 
   const onKeyPress = (key: string) => {
-    if (key === 'Backspace') connection.key('backspace');
+    if (key === 'Enter' || key === 'Backspace') return;
+    if (key.startsWith('Arrow')) {
+      connection.key(key.toLowerCase().replace('arrow', ''));
+    }
   };
 
   const disconnect = () => {
@@ -166,7 +193,7 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
       <TextInput
         ref={inputRef}
         style={styles.hiddenInput}
-        defaultValue={KEYBOARD_SENTINEL}
+        value={inputValue}
         onChangeText={onChangeText}
         onKeyPress={(e) => onKeyPress(e.nativeEvent.key)}
         onSubmitEditing={() => connection.key('enter')}
@@ -175,6 +202,8 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
         autoCapitalize="none"
         autoCorrect={false}
         autoComplete="off"
+        spellCheck={false}
+        keyboardType="visible-password"
         multiline={false}
         submitBehavior="submit"
       />

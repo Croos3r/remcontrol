@@ -22,7 +22,16 @@ pub fn spawn<I: Injector>(mut injector: I) -> mpsc::UnboundedSender<Command> {
         let mut held: HashSet<MouseButton> = HashSet::new();
         let (mut rem_x, mut rem_y) = (0.0_f64, 0.0_f64);
         let (mut scroll_rem_x, mut scroll_rem_y) = (0.0_f64, 0.0_f64);
-        while let Some(cmd) = rx.blocking_recv() {
+        let mut pending: std::collections::VecDeque<Command> = std::collections::VecDeque::new();
+        loop {
+            let cmd = if let Some(c) = pending.pop_front() {
+                c
+            } else {
+                match rx.blocking_recv() {
+                    Some(c) => c,
+                    None => break,
+                }
+            };
             match cmd {
                 Command::Input(msg) => match msg {
                     ClientMessage::Move { dx, dy } => {
@@ -58,7 +67,27 @@ pub fn spawn<I: Injector>(mut injector: I) -> mpsc::UnboundedSender<Command> {
                             injector.scroll(ix, iy);
                         }
                     }
-                    ClientMessage::Text { value } => injector.text(&value),
+                    ClientMessage::Text { value } => {
+                        let mut buf = value;
+                        let mut idle = std::time::Duration::ZERO;
+                        while buf.len() < 4096 && idle < std::time::Duration::from_millis(25) {
+                            match rx.try_recv() {
+                                Ok(Command::Input(ClientMessage::Text { value: more })) => {
+                                    buf.push_str(&more);
+                                    idle = std::time::Duration::ZERO;
+                                }
+                                Ok(other) => {
+                                    pending.push_back(other);
+                                    break;
+                                }
+                                Err(_) => {
+                                    std::thread::sleep(std::time::Duration::from_millis(5));
+                                    idle += std::time::Duration::from_millis(5);
+                                }
+                            }
+                        }
+                        injector.text(&buf);
+                    }
                     ClientMessage::Key { key } => injector.key(key),
                     ClientMessage::Hello { .. } => {}
                 },
@@ -107,8 +136,27 @@ impl Injector for EnigoInjector {
         }
     }
     fn text(&mut self, value: &str) {
-        use enigo::Keyboard;
-        let _ = self.0.text(value);
+        if value.is_empty() {
+            return;
+        }
+        if value.is_ascii() {
+            let mut cmd = std::process::Command::new("xdotool");
+            cmd.args(["type", "--clearmodifiers", "--delay", "0", value]);
+            if let Err(e) = cmd.status() {
+                tracing::warn!("xdotool type failed: {e}");
+            }
+            return;
+        }
+        for ch in value.chars() {
+            let code = ch as u32;
+            let arg = format!("0x{code:04X}");
+            let status = std::process::Command::new("xdotool")
+                .args(["key", "--clearmodifiers", &arg])
+                .status();
+            if let Err(e) = status {
+                tracing::warn!(?ch, "xdotool key failed: {e}");
+            }
+        }
     }
     fn key(&mut self, key: SpecialKey) {
         use enigo::Keyboard;

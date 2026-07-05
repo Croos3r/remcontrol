@@ -18,14 +18,22 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let ip = local_ip_address::local_ip()?;
+    let hostname = hostname::get()
+        .ok()
+        .and_then(|h| h.into_string().ok())
+        .map(|h| h.trim_end_matches('.').to_string())
+        .filter(|h| !h.is_empty())
+        .unwrap_or_else(|| "remcontrol".to_string());
     let payload = serde_json::json!({
         "ip": ip.to_string(),
         "port": cfg.port,
         "token": cfg.token,
+        "name": hostname,
     })
     .to_string();
 
     println!("remcontrol server");
+    println!("  host    : {hostname}");
     println!("  address : ws://{ip}:{}/ws", cfg.port);
     println!("  token   : {}", cfg.token);
     println!("  config  : {}", config_path.display());
@@ -33,10 +41,11 @@ async fn main() -> anyhow::Result<()> {
     qr2term::print_qr(&payload)?;
 
     let mdns = mdns_sd::ServiceDaemon::new()?;
+    let host_fqdn = format!("{hostname}.local.");
     let service = mdns_sd::ServiceInfo::new(
         "_remcontrol._tcp.local.",
-        "remcontrol",
-        "remcontrol.local.",
+        &hostname,
+        &host_fqdn,
         ip,
         cfg.port,
         None,

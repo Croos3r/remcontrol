@@ -1,0 +1,133 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  server:
+    name: Server binaries
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - name: Install cross
+        run: cargo install cross
+      - name: Install cargo-xwin
+        run: cargo install cargo-xwin
+
+      - name: Build Linux
+        run: cross build --release --target x86_64-unknown-linux-gnu
+      - name: Build macOS x86_64
+        run: cross build --release --target x86_64-apple-darwin
+      - name: Build macOS aarch64
+        run: cross build --release --target aarch64-apple-darwin
+      - name: Build Windows (MSVC via cargo-xwin)
+        run: cargo xwin build --release --target x86_64-pc-windows-msvc
+
+      - name: Stage binaries
+        run: |
+          mkdir -p staged
+          cp ../target/x86_64-unknown-linux-gnu/release/remcontrol-server staged/remcontrol-server-x86_64-linux
+          cp ../target/x86_64-apple-darwin/release/remcontrol-server staged/remcontrol-server-x86_64-macos
+          cp ../target/aarch64-apple-darwin/release/remcontrol-server staged/remcontrol-server-aarch64-macos
+          cp ../target/x86_64-pc-windows-msvc/release/remcontrol-server.exe staged/remcontrol-server-x86_64-windows.exe
+          strip staged/remcontrol-server-x86_64-linux || true
+          strip staged/remcontrol-server-x86_64-macos || true
+          strip staged/remcontrol-server-aarch64-macos || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-binaries
+          path: server/staged/*
+
+  app:
+    name: Android APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: npm ci
+      - name: Expo prebuild (android)
+        run: npx expo prebuild --platform android --no-install
+      - name: Gradle assembleRelease
+        run: |
+          cd android
+          ./gradlew assembleRelease
+      - name: Stage APK
+        run: |
+          mkdir -p staged
+          cp android/app/build/outputs/apk/release/app-release.apk staged/remcontrol-app-android.apk
+          ls -la staged
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: app/staged/remcontrol-app-android.apk
+
+  release:
+    name: Draft release
+    needs: [server, app]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: List artifacts
+        run: find artifacts -type f -maxdepth 3
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          body: |
+            ## Server binaries
+
+            - Linux: `remcontrol-server-x86_64-linux`
+            - macOS (Intel): `remcontrol-server-x86_64-macos`
+            - macOS (Apple Silicon): `remcontrol-server-aarch64-macos`
+            - Windows: `remcontrol-server-x86_64-windows.exe`
+
+            ### macOS note
+
+            The macOS binaries are unsigned. On first run you may need to clear
+            the quarantine attribute:
+
+            ```sh
+            xattr -dr com.apple.quarantine remcontrol-server-*
+            ```
+
+            ### Linux note
+
+            The Linux server needs `xdotool` installed at runtime for text
+            entry (`sudo apt install xdotool` or your distro's equivalent).
+
+            ## Android app
+
+            `remcontrol-app-android.apk` — debug-signed, sideload by allowing
+            installs from unknown sources.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,12 @@
+/home/dorian/Projects/remcontrol/server/target/debug/deps/enigo-ba38a715b876408c.d: /home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/lib.rs /home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/agent.rs /home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/linux/mod.rs /home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/linux/x11rb.rs /home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/linux/keymap.rs /home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/keycodes.rs
+
+/home/dorian/Projects/remcontrol/server/target/debug/deps/libenigo-ba38a715b876408c.rlib: /home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/lib.rs /home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/agent.rs /home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/linux/mod.rs /home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/linux/x11rb.rs /home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/linux/keymap.rs /home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/keycodes.rs
+
+/home/dorian/Projects/remcontrol/server/target/debug/deps/libenigo-ba38a715b876408c.rmeta: /home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/lib.rs /home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/agent.rs /home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/linux/mod.rs /home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/linux/x11rb.rs /home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/linux/keymap.rs /home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/keycodes.rs
+
+/home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/lib.rs:
+/home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/agent.rs:
+/home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/linux/mod.rs:
+/home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/linux/x11rb.rs:
+/home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/linux/keymap.rs:
+/home/dorian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enigo-0.6.1/src/keycodes.rs:

@@ -1,4 +1,4 @@
-import { MouseButton, ServerInfo } from './types';
+import type { MouseButton, ServerInfo } from './types';
 
 export type ConnectionEvents = {
   onOpen?: () => void;

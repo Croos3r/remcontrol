@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ServerInfo } from './types';
+import type { ServerInfo } from './types';
 
 const KEY = 'remcontrol:last-connection';
 

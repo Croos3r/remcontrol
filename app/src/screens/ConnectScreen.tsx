@@ -1,16 +1,9 @@
+import { type BarcodeScanningResult, CameraView, useCameraPermissions } from 'expo-camera';
 import { useEffect, useRef, useState } from 'react';
-import {
-  FlatList,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import { BarcodeScanningResult, CameraView, useCameraPermissions } from 'expo-camera';
+import { FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Connection } from '../connection';
 import { saveLastConnection } from '../storage';
-import { ServerInfo } from '../types';
+import type { ServerInfo } from '../types';
 
 type Zeroconf = {
   on(event: string, cb: (service: ZeroconfService) => void): void;
@@ -80,9 +73,7 @@ export default function ConnectScreen({ onConnected }: Props) {
         port: service.port,
       };
       setDiscovered((prev) =>
-        prev.some((d) => d.ip === entry.ip && d.port === entry.port)
-          ? prev
-          : [...prev, entry],
+        prev.some((d) => d.ip === entry.ip && d.port === entry.port) ? prev : [...prev, entry],
       );
     });
     zeroconf.scan('remcontrol', 'tcp', 'local.');

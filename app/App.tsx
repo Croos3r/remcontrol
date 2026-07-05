@@ -7,7 +7,7 @@ import { Connection } from './src/connection';
 import ConnectScreen from './src/screens/ConnectScreen';
 import TrackpadScreen from './src/screens/TrackpadScreen';
 import { loadLastConnection } from './src/storage';
-import { ServerInfo } from './src/types';
+import type { ServerInfo } from './src/types';
 
 type Screen = 'restoring' | 'connect' | 'trackpad';
 

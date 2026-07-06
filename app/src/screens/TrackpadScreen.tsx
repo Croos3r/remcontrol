@@ -7,11 +7,17 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { runOnJS, useSharedValue } from 'react-native-reanimated';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Card } from '../components/Card';
 import { Chip } from '../components/Chip';
@@ -59,6 +65,12 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
   const scrollDx = useSharedValue(0);
   const scrollDy = useSharedValue(0);
   const sensitivitySV = useSharedValue(sensitivity);
+  const topBarVisibleSV = useSharedValue(1);
+
+  const topBarAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: topBarVisibleSV.value,
+    transform: [{ translateY: (1 - topBarVisibleSV.value) * -24 }],
+  }));
 
   const inputRef = useRef<TextInput>(null);
   const lastTapRef = useRef(0);
@@ -152,6 +164,10 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
     const id = setTimeout(() => dispatchTopBar({ type: 'IDLE_TIMEOUT' }), 3000);
     return () => clearTimeout(id);
   }, [topBarState.visible, topBarState.settingsOpen]);
+
+  useEffect(() => {
+    topBarVisibleSV.value = withTiming(topBarState.visible ? 1 : 0, { duration: 180 });
+  }, [topBarState.visible, topBarVisibleSV]);
 
   const onMoveStart = useCallback(() => {
     dispatchTopBar({ type: 'DRAG_START' });
@@ -358,37 +374,47 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
         style={[styles.topBar, { paddingTop: insets.top + spacing.sm }]}
         pointerEvents="box-none"
       >
-        <Card style={[styles.controlCluster, { backgroundColor: theme.surface }]} padded={false}>
-          <ControlButton
-            icon="keypad-outline"
-            label="Keyboard"
-            active={keyboardMode !== 'off'}
-            onPress={toggleKeyboard}
-            themeColor={theme.primary}
-          />
-          <ControlButton
-            icon="settings-outline"
-            label="Settings"
-            active={topBarState.settingsOpen}
-            onPress={() => dispatchTopBar({ type: 'SETTINGS_TOGGLE' })}
-            themeColor={theme.primary}
-          />
-          <View style={styles.spacer} />
-          <View
-            style={[
-              styles.statusDot,
-              status === 'connected'
-                ? { backgroundColor: theme.ok }
-                : { backgroundColor: theme.warn },
-            ]}
-          />
-          <ControlButton
-            icon="close"
-            label="Disconnect"
-            onPress={disconnect}
-            themeColor={theme.danger}
-          />
-        </Card>
+        <Animated.View
+          style={topBarAnimatedStyle}
+          pointerEvents={topBarState.visible ? 'auto' : 'none'}
+        >
+          <Card style={[styles.controlCluster, { backgroundColor: theme.surface }]} padded={false}>
+            <ControlButton
+              icon="keypad-outline"
+              label="Keyboard"
+              active={keyboardMode !== 'off'}
+              onPress={toggleKeyboard}
+              themeColor={theme.primary}
+            />
+            <ControlButton
+              icon="settings-outline"
+              label="Settings"
+              active={topBarState.settingsOpen}
+              onPress={() => dispatchTopBar({ type: 'SETTINGS_TOGGLE' })}
+              themeColor={theme.primary}
+            />
+            <View style={styles.spacer} />
+            <View
+              style={[
+                styles.statusDot,
+                status === 'connected'
+                  ? { backgroundColor: theme.ok }
+                  : { backgroundColor: theme.warn },
+              ]}
+            />
+            <ControlButton
+              icon="close"
+              label="Disconnect"
+              onPress={disconnect}
+              themeColor={theme.danger}
+            />
+          </Card>
+        </Animated.View>
+        {!topBarState.visible && (
+          <TouchableWithoutFeedback onPress={() => dispatchTopBar({ type: 'REVEAL_TAP' })}>
+            <View style={[styles.revealZone, { height: insets.top + 32 }]} />
+          </TouchableWithoutFeedback>
+        )}
         {topBarState.settingsOpen && (
           <Card style={styles.settingsCard} padded={false}>
             <Text style={[styles.settingsLabel, { color: theme.muted }]}>Speed</Text>
@@ -565,6 +591,12 @@ const styles = StyleSheet.create({
   topBar: {
     paddingHorizontal: spacing.md,
     marginBottom: spacing.md,
+  },
+  revealZone: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
   },
   controlCluster: {
     flexDirection: 'row',

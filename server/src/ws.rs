@@ -65,9 +65,7 @@ impl AppState {
             active: Arc::new(Mutex::new(None)),
             rate: Arc::new(Mutex::new(RateLimiter::new())),
             allowed_origins: Arc::new(allowed_origins),
-            self_origin: Arc::new(
-                bind_addr.map(|a| format!("http://{a}")).unwrap_or_default(),
-            ),
+            self_origin: Arc::new(bind_addr.map(|a| format!("http://{a}")).unwrap_or_default()),
         }
     }
 }
@@ -174,7 +172,11 @@ async fn upgrade(
     headers: HeaderMap,
 ) -> impl IntoResponse {
     let peer_ip = peer.ip();
-    if !origin_allowed(&state.self_origin, &state.allowed_origins, headers.get("origin")) {
+    if !origin_allowed(
+        &state.self_origin,
+        &state.allowed_origins,
+        headers.get("origin"),
+    ) {
         let origin_val = headers
             .get("origin")
             .and_then(|v| v.to_str().ok())
@@ -196,11 +198,7 @@ async fn upgrade(
 /// which is the server itself; that is not a browser context to defend
 /// against. Any other `Origin` must match the configured allowlist, so a web
 /// page on a different host cannot open a WebSocket to the server.
-fn origin_allowed(
-    self_origin: &str,
-    allowed: &[String],
-    origin: Option<&HeaderValue>,
-) -> bool {
+fn origin_allowed(self_origin: &str, allowed: &[String], origin: Option<&HeaderValue>) -> bool {
     let Some(value) = origin else {
         return true;
     };

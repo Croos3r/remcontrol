@@ -154,6 +154,7 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
   }, [topBarState.visible, topBarState.settingsOpen]);
 
   const onMoveStart = useCallback(() => {
+    dispatchTopBar({ type: 'DRAG_START' });
     if (Date.now() - lastTapRef.current < DOUBLE_TAP_DRAG_WINDOW_MS) {
       draggingRef.current = true;
       connection.buttonDown('left');
@@ -203,9 +204,17 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
       if (success) connection.click('right');
     });
 
+  const onScrollStart = useCallback(() => {
+    dispatchTopBar({ type: 'DRAG_START' });
+  }, []);
+
   const scrollPan = Gesture.Pan()
     .minPointers(2)
     .maxPointers(2)
+    .onStart(() => {
+      'worklet';
+      runOnJS(onScrollStart)();
+    })
     .onChange((e) => {
       'worklet';
       scrollDx.value += -e.changeX * SCROLL_SENSITIVITY;

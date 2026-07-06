@@ -31,6 +31,10 @@ disable it (see below).
 - `--no-mdns` — do not advertise the service over mDNS for this run, even if
   `advertise_mdns` is true in the config. Useful on networks where multicast
   is blocked or unwanted.
+- `--bind-addr IP` — bind to `IP` for this run only, overriding the config's
+  `bind_addr`. The same `IP` is advertised in the QR code. Use this when the
+  auto-detected IP is wrong (for example, a VPN/Tailscale interface is the
+  default route and the phone can't reach it).
 
 ## Configuration
 
@@ -51,9 +55,15 @@ The config file is created with mode `0600` on Unix.
 
 ### Bind address
 
-By default the server binds to the discovered LAN IP, so it is reachable from
-the phone but not exposed on every interface. Set `bind_addr` to bind elsewhere
-(for example `"127.0.0.1"` for local-only, or `"0.0.0.0"` for all interfaces).
+By default the server enumerates the host's network interfaces and binds to a
+private IPv4 on a non-virtual interface (skipping loopback, Docker bridges,
+and VPN/tunnel interfaces like Tailscale or WireGuard). This avoids the
+common failure where the server binds to a VPN IP the phone can't reach.
+
+Set `bind_addr` (or pass `--bind-addr IP`) to bind elsewhere, for example
+`"127.0.0.1"` for local-only, or `"0.0.0.0"` for all interfaces. The same
+address is advertised in the QR code, so the phone always targets the IP the
+server is actually listening on.
 
 ### mDNS discovery
 

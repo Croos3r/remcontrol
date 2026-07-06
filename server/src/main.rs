@@ -1,7 +1,7 @@
 use remcontrol_server::{
-    config, injector, pairing_payload, sanitize_hostname, token_fingerprint, ws,
+    config, injector, pairing_payload, pick_lan_ip, sanitize_hostname, token_fingerprint, ws,
 };
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -23,13 +23,34 @@ async fn main() -> anyhow::Result<()> {
     let no_mdns = std::env::args().any(|a| a == "--no-mdns");
     let advertise_mdns = cfg.advertise_mdns && !no_mdns;
 
-    let ip = local_ip_address::local_ip()?;
+    // `--bind-addr IP` overrides the config's bind_addr for one run, useful
+    // when the auto-detected IP is wrong (e.g., a VPN/Tailscale interface is
+    // the default route). The same IP is advertised in the QR.
+    let args: Vec<String> = std::env::args().collect();
+    let cli_bind: Option<String> = (0..args.len())
+        .filter(|i| args[*i] == "--bind-addr")
+        .filter_map(|i| args.get(i + 1).cloned())
+        .next();
     let hostname = sanitize_hostname(hostname::get().ok().and_then(|h| h.into_string().ok()));
-    // Bind to the configured address, or default to the discovered LAN IP so
-    // the server is reachable on the LAN but not exposed on every interface
-    // (H-4, L-4).
-    let bind_ip = cfg.bind_addr.clone().unwrap_or_else(|| ip.to_string());
-    let bind_addr: SocketAddr = format!("{bind_ip}:{}", cfg.port).parse()?;
+
+    // Pick the LAN IP. Prefer the CLI / config override; otherwise enumerate
+    // interfaces and pick a private IPv4 on a non-virtual interface so we
+    // don't bind to a Tailscale/WireGuard/Docker IP the phone can't reach.
+    // Fall back to the crate's heuristic only if our enumeration finds nothing.
+    let ip: IpAddr = match cli_bind.as_deref().or(cfg.bind_addr.as_deref()) {
+        Some(addr) => addr
+            .parse()
+            .map_err(|e| anyhow::anyhow!("invalid bind_addr '{addr}': {e}"))?,
+        None => match pick_lan_ip() {
+            Ok(ip) => ip,
+            Err(e) => {
+                tracing::warn!("LAN IP detection failed ({e}); falling back to local_ip()");
+                local_ip_address::local_ip()?
+            }
+        },
+    };
+
+    let bind_addr: SocketAddr = format!("{ip}:{}", cfg.port).parse()?;
     let payload = pairing_payload(&ip.to_string(), cfg.port, &cfg.token, &hostname);
 
     println!("remcontrol server");

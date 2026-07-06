@@ -1,4 +1,4 @@
-import { useColorScheme } from 'react-native';
+import { useColorScheme, useWindowDimensions } from 'react-native';
 import { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 export const radius = {
@@ -186,6 +186,11 @@ export const darkTheme: Theme = {
 export function useTheme(): Theme {
   const scheme = useColorScheme();
   return scheme === 'dark' ? darkTheme : lightTheme;
+}
+
+export function useIsLandscape() {
+  const { width, height } = useWindowDimensions();
+  return width >= height;
 }
 
 const SPRING = { damping: 18, stiffness: 300, mass: 0.8 };

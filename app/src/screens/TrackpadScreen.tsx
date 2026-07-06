@@ -161,8 +161,8 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
 
   const movePan = Gesture.Pan()
     .maxPointers(1)
-    .activeOffsetX(3)
-    .activeOffsetY(3)
+    .activeOffsetX([-3, 3])
+    .activeOffsetY([-3, 3])
     .onStart(() => {
       'worklet';
       runOnJS(onMoveStart)();

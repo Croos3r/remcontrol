@@ -26,9 +26,14 @@ describe('reduceTopBar', () => {
     expect(reduceTopBar(state, { type: 'IDLE_TIMEOUT' })).toEqual(state);
   });
 
-  it('REVEAL_TAP shows the bar', () => {
-    const next = reduceTopBar({ visible: false, settingsOpen: false }, { type: 'REVEAL_TAP' });
+  it('DRAWER_OPEN shows the bar', () => {
+    const next = reduceTopBar({ visible: false, settingsOpen: false }, { type: 'DRAWER_OPEN' });
     expect(next).toEqual({ visible: true, settingsOpen: false });
+  });
+
+  it('DRAWER_CLOSE hides the bar and closes settings', () => {
+    const next = reduceTopBar({ visible: true, settingsOpen: true }, { type: 'DRAWER_CLOSE' });
+    expect(next).toEqual({ visible: false, settingsOpen: false });
   });
 
   it('SETTINGS_TOGGLE opening forces the bar visible', () => {

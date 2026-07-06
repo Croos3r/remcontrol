@@ -1,4 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
+import { NavigationBar } from 'expo-navigation-bar';
 import { type ComponentProps, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import {
   Keyboard,
@@ -168,6 +169,13 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
   useEffect(() => {
     topBarVisibleSV.value = withTiming(topBarState.visible ? 1 : 0, { duration: 180 });
   }, [topBarState.visible, topBarVisibleSV]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    // setHidden natively applies swipe-to-reveal (BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE).
+    NavigationBar.setHidden(true);
+    return () => NavigationBar.setHidden(false);
+  }, []);
 
   const onMoveStart = useCallback(() => {
     dispatchTopBar({ type: 'DRAG_START' });

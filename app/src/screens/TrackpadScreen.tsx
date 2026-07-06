@@ -41,6 +41,8 @@ const SENSITIVITIES = [
 ] as const;
 
 const SCROLL_SENSITIVITY = 0.05;
+// Extra upward travel when retracted so the Card's soft shadow clears the clip.
+const DRAWER_HIDE_CLEARANCE = 16;
 const DOUBLE_TAP_DRAG_WINDOW_MS = 300;
 const RECONNECT_DELAYS_MS = [1000, 2000, 4000, 8000, 16000];
 const KEYBOARD_SENTINEL = ' ';
@@ -70,7 +72,9 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
   const drawerContentSV = useSharedValue(56);
 
   const drawerAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: -drawerContentSV.value * (1 - drawerProgress.value) }],
+    transform: [
+      { translateY: -(drawerContentSV.value + DRAWER_HIDE_CLEARANCE) * (1 - drawerProgress.value) },
+    ],
   }));
 
   const onDrawerContentLayout = useCallback(

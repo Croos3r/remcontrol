@@ -321,6 +321,10 @@ async fn authenticate(
         rate.lock().await.record_failure(peer_ip);
         return Err("unsupported protocol version");
     }
+    if !hello.has_correct_type() {
+        rate.lock().await.record_failure(peer_ip);
+        return Err("expected hello");
+    }
     let client_pub = match parse_pubkey_hex(&hello.pubkey) {
         Some(p) => p,
         None => {
@@ -340,9 +344,11 @@ async fn authenticate(
         }
     };
 
-    // Send the server's ephemeral public key as the plaintext welcome.
+    // Send the server's ephemeral public key as the plaintext welcome. The
+    // `type: "welcome"` discriminator is required by the TS client.
     let welcome = WelcomeFrame {
         v: PROTOCOL_VERSION,
+        ty: "welcome".to_string(),
         pubkey: pubkey_hex(&server_pub),
     };
     let payload = serde_json::to_string(&welcome).map_err(|_| "internal error")?;

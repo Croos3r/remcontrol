@@ -13,7 +13,8 @@
         {
           "cameraPermission": "Scan the server QR code to connect to your PC."
         }
-      ]
+      ],
+      "./plugins/withLanCleartext.js"
     ],
     "ios": {
       "supportsTablet": true,

@@ -48,6 +48,7 @@ impl EncClient {
         let pubkey = pubkey_hex(&hs.public());
         let hello = HelloFrame {
             v: PROTOCOL_VERSION,
+            ty: "hello".to_string(),
             pubkey,
         };
         ws.send(TsMessage::Text(
@@ -57,8 +58,16 @@ impl EncClient {
         .unwrap();
 
         let welcome_raw = ws.next().await.unwrap().unwrap().into_text().unwrap();
+        // Regression: the welcome must carry the `type: "welcome"` discriminator
+        // the TS client checks (`msg.type !== 'welcome'`). The raw JSON must
+        // contain it verbatim, not just deserialize-into a tolerant struct.
+        assert!(
+            welcome_raw.contains(r#""type":"welcome""#),
+            "welcome must include type:\"welcome\"; got {welcome_raw}"
+        );
         let welcome: WelcomeFrame = serde_json::from_str(&welcome_raw).unwrap();
         assert_eq!(welcome.v, PROTOCOL_VERSION);
+        assert!(welcome.has_correct_type());
         let server_pub = parse_pubkey_hex(&welcome.pubkey).unwrap();
         let psk = psk_from_token(token);
         let shared = hs.shared_secret(&server_pub).unwrap();
@@ -113,6 +122,7 @@ async fn wrong_token_handshake_fails() {
     let hs = Handshake::new();
     let hello = HelloFrame {
         v: PROTOCOL_VERSION,
+        ty: "hello".to_string(),
         pubkey: pubkey_hex(&hs.public()),
     };
     ws.send(TsMessage::Text(
@@ -230,6 +240,7 @@ async fn origin_allowlist_lets_originless_native_client_through() {
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let hello = HelloFrame {
         v: PROTOCOL_VERSION,
+        ty: "hello".to_string(),
         pubkey: pubkey_hex(&Handshake::new().public()),
     };
     ws.send(TsMessage::Text(
@@ -262,6 +273,7 @@ async fn rate_limit_bans_after_repeated_bad_handshakes() {
         let hs = Handshake::new();
         let hello = HelloFrame {
             v: PROTOCOL_VERSION,
+            ty: "hello".to_string(),
             pubkey: pubkey_hex(&hs.public()),
         };
         ws.send(TsMessage::Text(
@@ -292,6 +304,7 @@ async fn rate_limit_bans_after_repeated_bad_handshakes() {
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let hello = HelloFrame {
         v: PROTOCOL_VERSION,
+        ty: "hello".to_string(),
         pubkey: pubkey_hex(&Handshake::new().public()),
     };
     ws.send(TsMessage::Text(

@@ -216,20 +216,40 @@ pub fn parse_pubkey_hex(s: &str) -> Option<PublicKey> {
     Some(PublicKey::from(arr))
 }
 
-/// Handshake frame sent by the client as the first message.
+/// Handshake frame sent by the client as the first message. The `type`
+/// discriminator must be `"hello"`; the TS client sends
+/// `{"v","type":"hello","pubkey"}`. The field is required on the wire.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HelloFrame {
     pub v: u32,
+    #[serde(rename = "type")]
+    pub ty: String,
     #[serde(rename = "pubkey")]
     pub pubkey: String,
 }
 
-/// Handshake frame sent by the server in reply.
+impl HelloFrame {
+    pub fn has_correct_type(&self) -> bool {
+        self.ty == "hello"
+    }
+}
+
+/// Handshake frame sent by the server in reply. The `type` discriminator is
+/// `"welcome"`; the TS client rejects any welcome frame that lacks it. The
+/// field is required on the wire.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WelcomeFrame {
     pub v: u32,
+    #[serde(rename = "type")]
+    pub ty: String,
     #[serde(rename = "pubkey")]
     pub pubkey: String,
+}
+
+impl WelcomeFrame {
+    pub fn has_correct_type(&self) -> bool {
+        self.ty == "welcome"
+    }
 }
 
 #[cfg(test)]
@@ -312,5 +332,54 @@ mod tests {
         // A client key derived with a different PSK cannot open it.
         let keys_client_b = SessionKeys::derive_client(&shared_c, &psk_from_token("b"));
         assert!(keys_client_b.open(&frame).is_err());
+    }
+
+    /// Pin the on-wire JSON shape of the handshake frames. The TS client
+    /// (`connection.ts`) checks `msg.type === 'welcome'` and builds its hello
+    /// with `type: 'hello'`; if the server ever drops the discriminator, the
+    /// client rejects the welcome and the handshake dies (regression caught
+    /// 2026-07-06). The serialized JSON must contain the literal `type` field.
+    #[test]
+    fn handshake_frames_carry_type_discriminator() {
+        let hello = HelloFrame {
+            v: PROTOCOL_VERSION,
+            ty: "hello".to_string(),
+            pubkey: "ab".repeat(32),
+        };
+        let hello_json = serde_json::to_string(&hello).unwrap();
+        assert!(hello_json.contains(r#""type":"hello""#), "{hello_json}");
+        assert!(hello.has_correct_type());
+
+        let welcome = WelcomeFrame {
+            v: PROTOCOL_VERSION,
+            ty: "welcome".to_string(),
+            pubkey: "cd".repeat(32),
+        };
+        let welcome_json = serde_json::to_string(&welcome).unwrap();
+        assert!(
+            welcome_json.contains(r#""type":"welcome""#),
+            "{welcome_json}"
+        );
+        assert!(welcome.has_correct_type());
+    }
+
+    /// A welcome frame without a `type` field (the old buggy server output)
+    /// must fail to parse. This is the regression guard: the TS client
+    /// rejects a welcome lacking `type === 'welcome'`, so the wire format
+    /// requires the discriminator.
+    #[test]
+    fn welcome_without_type_is_rejected() {
+        let legacy = format!(r#"{{"v":1,"pubkey":"{}"}}"#, "ab".repeat(32));
+        let parsed: Result<WelcomeFrame, _> = serde_json::from_str(&legacy);
+        assert!(parsed.is_err(), "welcome without type must not parse");
+    }
+
+    /// A hello frame without a `type` field must fail to parse, mirroring
+    /// the welcome contract.
+    #[test]
+    fn hello_without_type_is_rejected() {
+        let legacy = format!(r#"{{"v":1,"pubkey":"{}"}}"#, "ab".repeat(32));
+        let parsed: Result<HelloFrame, _> = serde_json::from_str(&legacy);
+        assert!(parsed.is_err(), "hello without type must not parse");
     }
 }

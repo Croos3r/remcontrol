@@ -22,5 +22,8 @@ export function reduceTopBar(state: TopBarState, action: TopBarAction): TopBarSt
       const settingsOpen = !state.settingsOpen;
       return { visible: settingsOpen ? true : state.visible, settingsOpen };
     }
+    default:
+      action satisfies never;
+      return state;
   }
 }

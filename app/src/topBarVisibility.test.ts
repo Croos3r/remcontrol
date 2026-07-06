@@ -45,4 +45,9 @@ describe('reduceTopBar', () => {
     const next = reduceTopBar({ visible: true, settingsOpen: true }, { type: 'SETTINGS_TOGGLE' });
     expect(next).toEqual({ visible: true, settingsOpen: false });
   });
+
+  it('returns state unchanged for an unknown action', () => {
+    const state = { visible: true, settingsOpen: false };
+    expect(reduceTopBar(state, { type: 'BOGUS' } as never)).toBe(state);
+  });
 });

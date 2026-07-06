@@ -422,7 +422,12 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
 
       <View style={[styles.drawerRoot, { paddingTop: insets.top }]} pointerEvents="box-none">
         <GestureDetector gesture={drawerGesture}>
-          <View style={styles.drawerHandle}>
+          <View
+            style={styles.drawerHandle}
+            accessibilityRole="button"
+            accessibilityLabel={topBarState.visible ? 'Hide controls' : 'Show controls'}
+            accessibilityHint="Double tap to toggle the trackpad controls"
+          >
             <View style={[styles.drawerHandlePill, { backgroundColor: theme.border }]} />
           </View>
         </GestureDetector>
@@ -606,6 +611,7 @@ function ControlButton({
           : { backgroundColor: theme.softSurface, borderColor: theme.border, borderWidth: 1 },
       ]}
       onPress={onPress}
+      hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ selected: active }}

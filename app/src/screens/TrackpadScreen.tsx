@@ -416,13 +416,16 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
         </View>
       )}
 
-      <View style={styles.drawerRoot} pointerEvents="box-none">
-        <Animated.View
-          style={[styles.drawer, { paddingTop: insets.top }, drawerAnimatedStyle]}
-          pointerEvents="box-none"
-        >
-          <View
+      <View style={[styles.drawerRoot, { paddingTop: insets.top }]} pointerEvents="box-none">
+        <GestureDetector gesture={drawerGesture}>
+          <View style={styles.drawerHandle}>
+            <View style={[styles.drawerHandlePill, { backgroundColor: theme.border }]} />
+          </View>
+        </GestureDetector>
+        <View style={styles.drawerClip} pointerEvents="box-none">
+          <Animated.View
             onLayout={onDrawerContentLayout}
+            style={drawerAnimatedStyle}
             pointerEvents={topBarState.visible ? 'auto' : 'box-none'}
           >
             <Card
@@ -472,13 +475,8 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
                 ))}
               </Card>
             )}
-          </View>
-          <GestureDetector gesture={drawerGesture}>
-            <View style={styles.drawerHandle}>
-              <View style={[styles.drawerHandlePill, { backgroundColor: theme.border }]} />
-            </View>
-          </GestureDetector>
-        </Animated.View>
+          </Animated.View>
+        </View>
       </View>
 
       <View
@@ -652,8 +650,8 @@ const styles = StyleSheet.create({
     zIndex: 10,
     paddingHorizontal: spacing.md,
   },
-  drawer: {
-    alignItems: 'stretch',
+  drawerClip: {
+    overflow: 'hidden',
   },
   drawerHandle: {
     alignItems: 'center',

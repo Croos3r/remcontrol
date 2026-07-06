@@ -24,6 +24,7 @@ import { Chip } from '../components/Chip';
 import { Icon } from '../components/Icon';
 import { KeyPanel, type ModifierKey } from '../components/KeyPanel';
 import type { Connection } from '../connection';
+import { SENSITIVITIES } from '../sensitivity';
 import { radius, spacing, useIsLandscape, useTheme } from '../theme';
 import { INITIAL_TOP_BAR_STATE, reduceTopBar } from '../topBarVisibility';
 
@@ -33,12 +34,6 @@ interface Props {
 }
 
 type Status = 'connected' | 'reconnecting' | 'reauth';
-
-const SENSITIVITIES = [
-  { label: 'Slow', value: 0.8 },
-  { label: 'Normal', value: 1.5 },
-  { label: 'Fast', value: 2.5 },
-] as const;
 
 const SCROLL_SENSITIVITY = 0.05;
 // Extra upward travel when retracted so the Card's soft shadow clears the clip.

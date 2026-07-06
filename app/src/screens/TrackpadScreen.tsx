@@ -1,5 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { type ComponentProps, useCallback, useEffect, useRef, useState } from 'react';
+import { type ComponentProps, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import {
   Keyboard,
   Platform,
@@ -19,6 +19,7 @@ import { Icon } from '../components/Icon';
 import { KeyPanel, type ModifierKey } from '../components/KeyPanel';
 import type { Connection } from '../connection';
 import { radius, spacing, useIsLandscape, useTheme } from '../theme';
+import { INITIAL_TOP_BAR_STATE, reduceTopBar } from '../topBarVisibility';
 
 interface Props {
   connection: Connection;
@@ -42,7 +43,7 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
   const theme = useTheme();
   const [status, setStatus] = useState<Status>('connected');
   const [sensitivity, setSensitivity] = useState<number>(1.5);
-  const [showSettings, setShowSettings] = useState(false);
+  const [topBarState, dispatchTopBar] = useReducer(reduceTopBar, INITIAL_TOP_BAR_STATE);
   const [keyboardMode, setKeyboardMode] = useState<'off' | 'float' | 'dock'>('off');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [inputValue, setInputValue] = useState(KEYBOARD_SENTINEL);
@@ -145,6 +146,12 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
       hideSub.remove();
     };
   }, []);
+
+  useEffect(() => {
+    if (!topBarState.visible || topBarState.settingsOpen) return;
+    const id = setTimeout(() => dispatchTopBar({ type: 'IDLE_TIMEOUT' }), 3000);
+    return () => clearTimeout(id);
+  }, [topBarState.visible, topBarState.settingsOpen]);
 
   const onMoveStart = useCallback(() => {
     if (Date.now() - lastTapRef.current < DOUBLE_TAP_DRAG_WINDOW_MS) {
@@ -353,8 +360,8 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
           <ControlButton
             icon="settings-outline"
             label="Settings"
-            active={showSettings}
-            onPress={() => setShowSettings((v) => !v)}
+            active={topBarState.settingsOpen}
+            onPress={() => dispatchTopBar({ type: 'SETTINGS_TOGGLE' })}
             themeColor={theme.primary}
           />
           <View style={styles.spacer} />
@@ -373,7 +380,7 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
             themeColor={theme.danger}
           />
         </Card>
-        {showSettings && (
+        {topBarState.settingsOpen && (
           <Card style={styles.settingsCard} padded={false}>
             <Text style={[styles.settingsLabel, { color: theme.muted }]}>Speed</Text>
             {SENSITIVITIES.map((s) => (

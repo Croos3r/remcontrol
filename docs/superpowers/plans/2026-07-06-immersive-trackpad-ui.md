@@ -520,11 +520,18 @@ git commit -m "style(app): slim the trackpad top bar's default size"
 **Interfaces:**
 - Consumes: `expo-navigation-bar` from Task 1.
 
+> **SDK 57 API note:** The installed `expo-navigation-bar` (~57.0.1) replaced the old
+> `setVisibilityAsync('hidden')` + `setBehaviorAsync('overlay-swipe')` pair with a single
+> synchronous `NavigationBar.setHidden(boolean)`. The native side hardcodes
+> `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`, so swipe-to-reveal comes for free — no separate
+> behavior call is needed. Import the named `NavigationBar` (not `* as`), since `setHidden`
+> is a member of that namespace.
+
 - [ ] **Step 1: Import the module**
 
 Add near the top of `app/src/screens/TrackpadScreen.tsx` (after the `expo-linear-gradient` import at line 1):
 ```ts
-import * as NavigationBar from 'expo-navigation-bar';
+import { NavigationBar } from 'expo-navigation-bar';
 ```
 
 - [ ] **Step 2: Add the mount/unmount effect**
@@ -533,14 +540,12 @@ Add a new `useEffect` alongside the others (after the keyboard-listener effect, 
 ```ts
 useEffect(() => {
   if (Platform.OS !== 'android') return;
-  NavigationBar.setBehaviorAsync('overlay-swipe').catch(() => {});
-  NavigationBar.setVisibilityAsync('hidden').catch(() => {});
-  return () => {
-    NavigationBar.setVisibilityAsync('visible').catch(() => {});
-  };
+  // setHidden natively applies swipe-to-reveal (BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE).
+  NavigationBar.setHidden(true);
+  return () => NavigationBar.setHidden(false);
 }, []);
 ```
-(`Platform` is already imported at line 5. The `.catch(() => {})` guards are needed because both calls return promises that can reject on unsupported devices — silently ignoring is correct here since there is no fallback UI to show for a system-bar API failure.)
+(`Platform` is already imported at line 5. `setHidden` is synchronous and a no-op off Android, so the `Platform.OS` guard plus no promise handling is sufficient.)
 
 - [ ] **Step 3: Rebuild native and verify**
 

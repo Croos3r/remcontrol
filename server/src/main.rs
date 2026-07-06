@@ -89,7 +89,12 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let commands = injector::spawn_enigo()?;
-    let state = ws::AppState::with_origins(cfg.token.clone(), commands, cfg.allowed_origins);
+    let state = ws::AppState::with_origins(
+        cfg.token.clone(),
+        commands,
+        cfg.allowed_origins,
+        Some(bind_addr),
+    );
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     axum::serve(
         listener,

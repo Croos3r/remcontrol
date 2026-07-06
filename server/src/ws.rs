@@ -40,17 +40,24 @@ pub struct AppState {
     active: Arc<Mutex<Option<oneshot::Sender<()>>>>,
     rate: Arc<Mutex<RateLimiter>>,
     allowed_origins: Arc<Vec<String>>,
+    /// The address the server is reachable on. A client whose `Origin` is the
+    /// server's own `http://<bind_addr>` (or scheme-less host form) is allowed
+    /// even when `allowed_origins` is empty, because the native React Native
+    /// WebSocket client sets `Origin` to the target URL's origin — which is the
+    /// server itself, not a browser context to defend against.
+    self_origin: Arc<String>,
 }
 
 impl AppState {
     pub fn new(token: String, commands: mpsc::Sender<Command>) -> Self {
-        Self::with_origins(token, commands, Vec::new())
+        Self::with_origins(token, commands, Vec::new(), None)
     }
 
     pub fn with_origins(
         token: String,
         commands: mpsc::Sender<Command>,
         allowed_origins: Vec<String>,
+        bind_addr: Option<SocketAddr>,
     ) -> Self {
         Self {
             token,
@@ -58,6 +65,9 @@ impl AppState {
             active: Arc::new(Mutex::new(None)),
             rate: Arc::new(Mutex::new(RateLimiter::new())),
             allowed_origins: Arc::new(allowed_origins),
+            self_origin: Arc::new(
+                bind_addr.map(|a| format!("http://{a}")).unwrap_or_default(),
+            ),
         }
     }
 }
@@ -164,8 +174,13 @@ async fn upgrade(
     headers: HeaderMap,
 ) -> impl IntoResponse {
     let peer_ip = peer.ip();
-    if !origin_allowed(&state.allowed_origins, headers.get("origin")) {
-        tracing::warn!(%peer_ip, "rejected upgrade from disallowed Origin");
+    if !origin_allowed(&state.self_origin, &state.allowed_origins, headers.get("origin")) {
+        let origin_val = headers
+            .get("origin")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("<absent>")
+            .to_string();
+        tracing::warn!(%peer_ip, origin = %origin_val, "rejected upgrade from disallowed Origin");
         return StatusCode::FORBIDDEN.into_response();
     }
     ws.max_message_size(MAX_MESSAGE_SIZE)
@@ -175,15 +190,26 @@ async fn upgrade(
 }
 
 /// Defense against cross-site WebSocket hijacking (L-7). Clients that send
-/// no `Origin` (the native app, curl) are always allowed; a browser that
-/// sends one must match the configured allowlist.
-fn origin_allowed(allowed: &[String], origin: Option<&HeaderValue>) -> bool {
+/// no `Origin` (curl, some native clients) are always allowed. A client that
+/// sends the server's own origin (`http://<bind_addr>`) is allowed too — the
+/// React Native WebSocket client sets `Origin` to the target URL's origin,
+/// which is the server itself; that is not a browser context to defend
+/// against. Any other `Origin` must match the configured allowlist, so a web
+/// page on a different host cannot open a WebSocket to the server.
+fn origin_allowed(
+    self_origin: &str,
+    allowed: &[String],
+    origin: Option<&HeaderValue>,
+) -> bool {
     let Some(value) = origin else {
         return true;
     };
     let Ok(s) = value.to_str() else {
         return false;
     };
+    if !self_origin.is_empty() && s == self_origin {
+        return true;
+    }
     allowed.iter().any(|a| a == s)
 }
 
@@ -412,4 +438,56 @@ async fn send_plain(socket: &mut WebSocket, msg: &ServerMessage) {
     let fallback = r#"{"type":"error","message":"server error"}"#;
     let payload = serde_json::to_string(msg).unwrap_or_else(|_| fallback.to_string());
     let _ = socket.send(Message::Text(payload.into())).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::origin_allowed;
+    use axum::http::HeaderValue;
+
+    fn hv(s: &str) -> Option<&HeaderValue> {
+        // HeaderValue stored in a leaked Box so we can hand out a 'static ref,
+        // matching the Option<&HeaderValue> the production code expects.
+        Some(Box::leak(Box::new(HeaderValue::from_str(s).unwrap())))
+    }
+
+    #[test]
+    fn no_origin_is_allowed() {
+        assert!(origin_allowed("http://10.0.0.1:17890", &[], None));
+    }
+
+    #[test]
+    fn self_origin_allowed_without_allowlist() {
+        // React Native sets Origin to the server's own http://<bind_addr>.
+        assert!(origin_allowed(
+            "http://10.68.253.178:17890",
+            &[],
+            hv("http://10.68.253.178:17890")
+        ));
+    }
+
+    #[test]
+    fn foreign_origin_rejected_when_allowlist_empty() {
+        assert!(!origin_allowed(
+            "http://10.68.253.178:17890",
+            &[],
+            hv("http://evil.example")
+        ));
+    }
+
+    #[test]
+    fn configured_origin_allowed() {
+        assert!(origin_allowed(
+            "http://10.68.253.178:17890",
+            &["http://app.local".to_string()],
+            hv("http://app.local")
+        ));
+    }
+
+    #[test]
+    fn self_origin_absent_does_not_break_no_origin_clients() {
+        // When bind_addr is unknown, self_origin is empty; origin-less clients
+        // are still allowed.
+        assert!(origin_allowed("", &[], None));
+    }
 }

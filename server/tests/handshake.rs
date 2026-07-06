@@ -17,9 +17,9 @@ async fn start_server_with(
     allowed_origins: Vec<String>,
 ) -> (String, tokio::sync::mpsc::Receiver<Command>) {
     let (tx, rx) = tokio::sync::mpsc::channel(64);
-    let state = AppState::with_origins(token.to_string(), tx, allowed_origins);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
+    let state = AppState::with_origins(token.to_string(), tx, allowed_origins, Some(addr));
     tokio::spawn(
         axum::serve(
             listener,

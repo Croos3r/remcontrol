@@ -12,9 +12,12 @@ function sameServer(a: ServerInfo, b: ServerInfo): boolean {
   return a.ip === b.ip && a.port === b.port;
 }
 
-/** SecureStore key for a server's token, keyed by ip:port. */
+/// SecureStore key for a server's token, keyed by ip+port. Expo SecureStore
+/// rejects keys containing ":" (only alphanumeric, ".", "-", "_" are allowed),
+/// so join with "-" instead of ":". The IP's dotted octets use only "." and
+/// digits, so `ip-port` is unambiguous.
 function tokenKey(ip: string, port: number): string {
-  return `${ip}:${port}`;
+  return `${ip}-${port}`;
 }
 
 function publicInfo(info: ServerInfo): Omit<ServerInfo, 'token'> {

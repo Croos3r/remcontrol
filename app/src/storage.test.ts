@@ -41,7 +41,7 @@ function server(ip: string, port = 17890, name?: string): ServerInfo {
 }
 
 function secureKey(ip: string, port: number): string {
-  return `${ip}:${port}`;
+  return `${ip}-${port}`;
 }
 
 describe('saveConnection / loadRecentConnections', () => {
@@ -54,6 +54,17 @@ describe('saveConnection / loadRecentConnections', () => {
     await saveConnection(server('192.168.1.10', 17890, 'valiant'));
     expect(secure.get(secureKey('192.168.1.10', 17890))).toBe('tok');
     expect(await loadRecentConnections()).toEqual([server('192.168.1.10', 17890, 'valiant')]);
+  });
+
+  it('uses a SecureStore-safe key (alphanumeric, ".", "-", "_" only)', async () => {
+    // Expo SecureStore rejects keys containing ":". The token key must be
+    // composed only of allowed characters so the save does not throw.
+    await saveConnection(server('10.68.253.178', 17890));
+    const keys = [...secure.keys()];
+    expect(keys).toContain('10.68.253.178-17890');
+    for (const k of keys) {
+      expect(k).toMatch(/^[A-Za-z0-9._-]+$/);
+    }
   });
 
   it('does not leak the token into AsyncStorage', async () => {

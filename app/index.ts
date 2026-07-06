@@ -1,3 +1,7 @@
+// Must run before any crypto (the @noble/* libs call crypto.getRandomValues,
+// which React Native's Hermes runtime does not provide natively).
+import 'react-native-get-random-values';
+
 import { registerRootComponent } from 'expo';
 
 import App from './App';

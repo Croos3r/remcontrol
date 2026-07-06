@@ -1,6 +1,15 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import type { ComponentProps } from 'react';
-import { Pressable, type StyleProp, StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { useEffect, useState } from 'react';
+import {
+  type LayoutChangeEvent,
+  Pressable,
+  type StyleProp,
+  StyleSheet,
+  View,
+  type ViewStyle,
+} from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { radius, spacing, useTheme } from '../theme';
 import { Icon } from './Icon';
 
@@ -8,6 +17,7 @@ type IconName = ComponentProps<typeof Icon>['name'];
 
 interface Tab<T extends string> {
   key: T;
+  /** Used for the accessibility label; not rendered on screen. */
   label: string;
   icon?: IconName;
 }
@@ -19,8 +29,37 @@ interface Props<T extends string> {
   style?: StyleProp<ViewStyle>;
 }
 
+const GAP = spacing.xs;
+const ANIM_MS = 180;
+
 export function TabBar<T extends string>({ tabs, value, onChange, style }: Props<T>) {
   const theme = useTheme();
+  const [rowWidth, setRowWidth] = useState(0);
+  const indicatorX = useSharedValue(0);
+  const indicatorW = useSharedValue(0);
+
+  const activeIndex = Math.max(
+    0,
+    tabs.findIndex((t) => t.key === value),
+  );
+
+  const onRowLayout = (e: LayoutChangeEvent) => {
+    setRowWidth(e.nativeEvent.layout.width);
+  };
+
+  useEffect(() => {
+    const count = tabs.length;
+    if (rowWidth === 0 || count === 0) return;
+    const tabW = (rowWidth - (count - 1) * GAP) / count;
+    indicatorW.value = tabW;
+    indicatorX.value = withTiming(activeIndex * (tabW + GAP), { duration: ANIM_MS });
+  }, [activeIndex, rowWidth, tabs.length, indicatorX, indicatorW]);
+
+  const indicatorStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: indicatorX.value }],
+    width: indicatorW.value,
+  }));
+
   return (
     <View
       style={[
@@ -29,69 +68,65 @@ export function TabBar<T extends string>({ tabs, value, onChange, style }: Props
         style,
       ]}
     >
-      {tabs.map((t) => {
-        const active = t.key === value;
-        return (
-          <Pressable
-            key={t.key}
-            onPress={() => onChange(t.key)}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: active }}
-            style={styles.tab}
-          >
-            {active ? (
-              <LinearGradient
-                colors={theme.tabGradient.colors}
-                start={theme.tabGradient.start}
-                end={theme.tabGradient.end}
-                style={styles.fill}
-              >
-                {t.icon ? <Icon name={t.icon} size={16} color={theme.onGradient} /> : null}
-                <Text style={[styles.label, { color: theme.onGradient }]} numberOfLines={1}>
-                  {t.label}
-                </Text>
-              </LinearGradient>
-            ) : (
+      <View style={styles.row} onLayout={onRowLayout}>
+        <Animated.View style={[styles.indicator, indicatorStyle]} pointerEvents="none">
+          <LinearGradient
+            colors={theme.tabGradient.colors}
+            start={theme.tabGradient.start}
+            end={theme.tabGradient.end}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+        {tabs.map((t) => {
+          const active = t.key === value;
+          return (
+            <Pressable
+              key={t.key}
+              onPress={() => onChange(t.key)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+              accessibilityLabel={t.label}
+              style={styles.tab}
+            >
               <View style={styles.fill}>
-                {t.icon ? <Icon name={t.icon} size={16} color={theme.muted} /> : null}
-                <Text style={[styles.label, { color: theme.muted }]} numberOfLines={1}>
-                  {t.label}
-                </Text>
+                {t.icon ? (
+                  <Icon name={t.icon} size={20} color={active ? theme.onGradient : theme.muted} />
+                ) : null}
               </View>
-            )}
-          </Pressable>
-        );
-      })}
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    padding: spacing.xs,
     borderRadius: radius.lg,
     borderWidth: 1,
+    padding: GAP,
+  },
+  row: {
+    flexDirection: 'row',
+    gap: GAP,
+    position: 'relative',
   },
   tab: {
     flex: 1,
   },
   fill: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.sm + 2,
-    borderRadius: radius.md,
-    minHeight: 40,
-    paddingHorizontal: spacing.sm,
+    minHeight: 44,
+    paddingVertical: spacing.sm,
   },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'center',
-    textAlignVertical: 'center',
-    includeFontPadding: false,
+  indicator: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    width: 0,
   },
 });

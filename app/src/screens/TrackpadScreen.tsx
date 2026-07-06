@@ -452,14 +452,6 @@ export default function TrackpadScreen({ connection, onDisconnect, initialSensit
                 themeColor={theme.primary}
               />
               <View style={styles.spacer} />
-              <View
-                style={[
-                  styles.statusDot,
-                  status === 'connected'
-                    ? { backgroundColor: theme.ok }
-                    : { backgroundColor: theme.warn },
-                ]}
-              />
               <ControlButton
                 icon="close"
                 label="Disconnect"
@@ -686,12 +678,6 @@ const styles = StyleSheet.create({
   },
   spacer: {
     flex: 1,
-  },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginHorizontal: spacing.xs,
   },
   settingsCard: {
     flexDirection: 'row',

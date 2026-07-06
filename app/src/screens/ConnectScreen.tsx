@@ -64,6 +64,7 @@ interface Discovered {
 
 interface Props {
   onConnected: (conn: Connection, info: ServerInfo) => void;
+  onPrefsChange?: (prefs: Prefs) => void;
 }
 
 function displayName(info: ServerInfo): string {
@@ -90,7 +91,7 @@ const TAB_ICONS: Record<Tab, ComponentProps<typeof Icon>['name']> = {
   settings: 'settings-outline',
 };
 
-export default function ConnectScreen({ onConnected }: Props) {
+export default function ConnectScreen({ onConnected, onPrefsChange }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('scan');
@@ -116,13 +117,17 @@ export default function ConnectScreen({ onConnected }: Props) {
     void loadPrefs().then(setPrefs);
   }, []);
 
-  const updatePrefs = useCallback((patch: Partial<Prefs>) => {
-    setPrefs((prev) => {
-      const next = { ...prev, ...patch };
-      void savePrefs(next);
-      return next;
-    });
-  }, []);
+  const updatePrefs = useCallback(
+    (patch: Partial<Prefs>) => {
+      setPrefs((prev) => {
+        const next = { ...prev, ...patch };
+        void savePrefs(next);
+        onPrefsChange?.(next);
+        return next;
+      });
+    },
+    [onPrefsChange],
+  );
 
   const probeAll = useCallback((servers: ServerInfo[]) => {
     setStatuses((prev) => {

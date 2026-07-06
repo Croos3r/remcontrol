@@ -97,7 +97,9 @@ export default function App() {
             </Card>
           </View>
         )}
-        {screen === 'connect' && <ConnectScreen onConnected={onConnected} />}
+        {screen === 'connect' && (
+          <ConnectScreen onConnected={onConnected} onPrefsChange={setPrefs} />
+        )}
         {screen === 'trackpad' && connectionRef.current && (
           <TrackpadScreen
             connection={connectionRef.current}

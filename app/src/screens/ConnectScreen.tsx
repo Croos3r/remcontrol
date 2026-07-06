@@ -1,6 +1,7 @@
 import { type BarcodeScanningResult, CameraView, useCameraPermissions } from 'expo-camera';
-import { useEffect, useRef, useState } from 'react';
+import { type ComponentProps, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Dimensions,
   FlatList,
   StyleSheet,
@@ -10,9 +11,17 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Button } from '../components/Buttons';
+import { Card } from '../components/Card';
+import { GradientHeader } from '../components/GradientHeader';
+import { Icon } from '../components/Icon';
+import { TabBar } from '../components/TabBar';
 import { Connection } from '../connection';
 import { forgetConnection, loadRecentConnections, saveConnection } from '../storage';
+import { radius, spacing, useTheme } from '../theme';
 import type { ServerInfo } from '../types';
+
+const LOGO = require('../../assets/brand/logo.png');
 
 type Zeroconf = {
   on(event: string, cb: (service: ZeroconfService) => void): void;
@@ -53,7 +62,22 @@ function displayName(info: ServerInfo): string {
   return info.name?.trim() || `${info.ip}:${info.port}`;
 }
 
+const TAB_LABELS: Record<Tab, string> = {
+  scan: 'Scan',
+  discover: 'Discover',
+  manual: 'Manual',
+  recent: 'Recent',
+};
+
+const TAB_ICONS: Record<Tab, ComponentProps<typeof Icon>['name']> = {
+  scan: 'scan-outline',
+  discover: 'wifi-outline',
+  manual: 'create-outline',
+  recent: 'time-outline',
+};
+
 export default function ConnectScreen({ onConnected }: Props) {
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('scan');
   const [error, setError] = useState<string | null>(null);
@@ -157,24 +181,27 @@ export default function ConnectScreen({ onConnected }: Props) {
     if (!permission?.granted) {
       return (
         <View style={styles.center}>
-          <Text style={styles.hint}>Camera access is needed to scan the QR code.</Text>
-          <TouchableOpacity style={styles.button} onPress={() => void requestPermission()}>
-            <Text style={styles.buttonText}>Allow camera</Text>
-          </TouchableOpacity>
+          <Icon name="scan-outline" size={48} color={theme.muted} />
+          <Text style={[styles.hint, { color: theme.muted }]}>
+            Camera access is needed to scan the QR code.
+          </Text>
+          <Button label="Allow camera" onPress={() => void requestPermission()} />
         </View>
       );
     }
-    const width = Math.min(Dimensions.get('window').width - 40, 360);
+    const width = Math.min(Dimensions.get('window').width - 96, 320);
     return (
       <View style={styles.scanColumn}>
-        <View style={[styles.cameraFrame, { width, height: width }]}>
+        <View style={[styles.cameraFrame, { width, height: width, borderColor: theme.navy }]}>
           <CameraView
             style={StyleSheet.absoluteFill}
             barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
             onBarcodeScanned={onBarcode}
           />
         </View>
-        <Text style={styles.scanHint}>Point at the QR code in the server terminal</Text>
+        <Text style={[styles.scanHint, { color: theme.muted }]}>
+          Point at the QR code in the server terminal
+        </Text>
       </View>
     );
   };
@@ -183,27 +210,30 @@ export default function ConnectScreen({ onConnected }: Props) {
     if (!zeroconfAvailable) {
       return (
         <View style={styles.center}>
-          <Text style={styles.hint}>Discovery is unavailable in this build.</Text>
+          <Icon name="wifi-outline" size={48} color={theme.muted} />
+          <Text style={[styles.hint, { color: theme.muted }]}>
+            Discovery is unavailable in this build.
+          </Text>
         </View>
       );
     }
     if (pendingServer) {
       return (
         <View style={styles.form}>
-          <Text style={styles.hint}>
+          <Text style={[styles.hint, { color: theme.muted }]}>
             Token for {pendingServer.name} ({pendingServer.ip}:{pendingServer.port})
           </Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, inputStyle(theme)]}
             placeholder="Pairing token"
-            placeholderTextColor="#666"
+            placeholderTextColor={theme.disabledText}
             autoCapitalize="none"
             autoCorrect={false}
             value={token}
             onChangeText={setToken}
           />
-          <TouchableOpacity
-            style={styles.button}
+          <Button
+            label="Connect"
             onPress={() =>
               connect({
                 ip: pendingServer.ip,
@@ -212,11 +242,9 @@ export default function ConnectScreen({ onConnected }: Props) {
                 name: pendingServer.name,
               })
             }
-          >
-            <Text style={styles.buttonText}>Connect</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setPendingServer(null)}>
-            <Text style={styles.link}>Back to the list</Text>
+          />
+          <TouchableOpacity onPress={() => setPendingServer(null)} hitSlop={8}>
+            <Text style={[styles.link, { color: theme.primary }]}>Back to the list</Text>
           </TouchableOpacity>
         </View>
       );
@@ -225,15 +253,19 @@ export default function ConnectScreen({ onConnected }: Props) {
       <FlatList
         data={discovered}
         keyExtractor={(item) => `${item.ip}:${item.port}`}
-        contentContainerStyle={discovered.length === 0 ? styles.center : undefined}
-        ListEmptyComponent={<Text style={styles.hint}>Searching for servers…</Text>}
+        contentContainerStyle={discovered.length === 0 ? styles.center : styles.list}
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Icon name="wifi-outline" size={48} color={theme.muted} />
+            <Text style={[styles.hint, { color: theme.muted }]}>Searching for servers…</Text>
+          </View>
+        }
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.listItem} onPress={() => setPendingServer(item)}>
-            <Text style={styles.listItemName}>{item.name}</Text>
-            <Text style={styles.listItemAddress}>
-              {item.ip}:{item.port}
-            </Text>
-          </TouchableOpacity>
+          <ServerRow
+            name={item.name}
+            address={`${item.ip}:${item.port}`}
+            onPress={() => setPendingServer(item)}
+          />
         )}
       />
     );
@@ -243,7 +275,10 @@ export default function ConnectScreen({ onConnected }: Props) {
     if (recent.length === 0) {
       return (
         <View style={styles.center}>
-          <Text style={styles.hint}>No saved servers yet. Scan a QR code or connect manually.</Text>
+          <Icon name="time-outline" size={48} color={theme.muted} />
+          <Text style={[styles.hint, { color: theme.muted }]}>
+            No saved servers yet. Scan a QR code or connect manually.
+          </Text>
         </View>
       );
     }
@@ -251,20 +286,25 @@ export default function ConnectScreen({ onConnected }: Props) {
       <FlatList
         data={recent}
         keyExtractor={(item) => `${item.ip}:${item.port}`}
+        contentContainerStyle={styles.list}
         renderItem={({ item }) => (
-          <View style={styles.listItemRow}>
-            <TouchableOpacity style={styles.listItem} onPress={() => connect(item)} disabled={busy}>
-              <Text style={styles.listItemName}>{displayName(item)}</Text>
-              <Text style={styles.listItemAddress}>
-                {item.ip}:{item.port}
-              </Text>
-            </TouchableOpacity>
+          <View style={styles.row}>
+            <View style={{ flex: 1 }}>
+              <ServerRow
+                name={displayName(item)}
+                address={`${item.ip}:${item.port}`}
+                onPress={() => connect(item)}
+                disabled={busy}
+              />
+            </View>
             <TouchableOpacity
-              style={styles.forgetButton}
+              style={[styles.forgetButton, { borderColor: theme.border }]}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel="Forget server"
               onPress={() => void forget(item)}
             >
-              <Text style={styles.forgetText}>✕</Text>
+              <Icon name="close" size={16} color={theme.muted} />
             </TouchableOpacity>
           </View>
         )}
@@ -275,9 +315,9 @@ export default function ConnectScreen({ onConnected }: Props) {
   const renderManual = () => (
     <View style={styles.form}>
       <TextInput
-        style={styles.input}
+        style={[styles.input, inputStyle(theme)]}
         placeholder="IP address"
-        placeholderTextColor="#666"
+        placeholderTextColor={theme.disabledText}
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType="decimal-pad"
@@ -285,25 +325,23 @@ export default function ConnectScreen({ onConnected }: Props) {
         onChangeText={setIp}
       />
       <TextInput
-        style={styles.input}
+        style={[styles.input, inputStyle(theme)]}
         placeholder="Port"
-        placeholderTextColor="#666"
+        placeholderTextColor={theme.disabledText}
         keyboardType="number-pad"
         value={port}
         onChangeText={setPort}
       />
       <TextInput
-        style={styles.input}
+        style={[styles.input, inputStyle(theme)]}
         placeholder="Pairing token"
-        placeholderTextColor="#666"
+        placeholderTextColor={theme.disabledText}
         autoCapitalize="none"
         autoCorrect={false}
         value={token}
         onChangeText={setToken}
       />
-      <TouchableOpacity style={styles.button} onPress={submitManual}>
-        <Text style={styles.buttonText}>Connect</Text>
-      </TouchableOpacity>
+      <Button label="Connect" onPress={submitManual} />
     </View>
   );
 
@@ -311,76 +349,97 @@ export default function ConnectScreen({ onConnected }: Props) {
   if (recent.length > 0) tabs.push('recent');
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
-      <Text style={styles.title}>remcontrol</Text>
-      <View style={styles.tabs}>
-        {tabs.map((t) => (
-          <TouchableOpacity
-            key={t}
-            style={[styles.tab, tab === t && styles.tabActive]}
-            onPress={() => {
-              setTab(t);
-              setError(null);
-            }}
-          >
-            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-              {t === 'scan'
-                ? 'Scan'
-                : t === 'discover'
-                  ? 'Discover'
-                  : t === 'manual'
-                    ? 'Manual'
-                    : 'Recent'}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: theme.appBg, paddingTop: insets.top + spacing.md },
+      ]}
+    >
+      <GradientHeader title="RemControl" subtitle="Connect a computer" icon={LOGO} />
+      <TabBar
+        style={styles.tabs}
+        tabs={tabs.map((t) => ({ key: t, label: TAB_LABELS[t], icon: TAB_ICONS[t] }))}
+        value={tab}
+        onChange={(t) => {
+          setTab(t);
+          setError(null);
+        }}
+      />
       <View style={styles.content}>
         {tab === 'scan' && renderScan()}
         {tab === 'discover' && renderDiscover()}
         {tab === 'manual' && renderManual()}
         {tab === 'recent' && renderRecent()}
       </View>
-      {busy && <Text style={styles.status}>Connecting…</Text>}
-      {error && <Text style={styles.error}>{error}</Text>}
+      {busy && (
+        <View style={styles.busyRow}>
+          <ActivityIndicator color={theme.primary} size="small" />
+          <Text style={[styles.busyText, { color: theme.muted }]}>Connecting…</Text>
+        </View>
+      )}
+      {error && (
+        <View
+          style={[styles.errorCard, { backgroundColor: theme.surface, borderColor: theme.danger }]}
+        >
+          <Icon name="alert-circle-outline" size={18} color={theme.danger} />
+          <Text style={[styles.errorText, { color: theme.danger }]}>{error}</Text>
+        </View>
+      )}
     </View>
+  );
+}
+
+function inputStyle(theme: ReturnType<typeof useTheme>) {
+  return {
+    backgroundColor: theme.surface,
+    color: theme.text,
+    borderColor: theme.border,
+    borderWidth: 1,
+    borderRadius: radius.md,
+  };
+}
+
+function ServerRow({
+  name,
+  address,
+  onPress,
+  disabled,
+}: {
+  name: string;
+  address: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  const theme = useTheme();
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      style={{ marginBottom: spacing.sm }}
+    >
+      <Card style={styles.serverCard}>
+        <View style={styles.serverIcon}>
+          <Icon name="desktop-outline" size={22} color={theme.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.serverName, { color: theme.text }]}>{name}</Text>
+          <Text style={[styles.serverAddress, { color: theme.muted }]}>{address}</Text>
+        </View>
+        <Icon name="chevron-forward" size={20} color={theme.muted} />
+      </Card>
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111',
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-  },
-  title: {
-    color: '#fff',
-    fontSize: 28,
-    fontWeight: '700',
-    marginBottom: 24,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
   },
   tabs: {
-    flexDirection: 'row',
-    marginBottom: 20,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 10,
-    borderBottomWidth: 2,
-    borderBottomColor: '#333',
-    alignItems: 'center',
-  },
-  tabActive: {
-    borderBottomColor: '#4da6ff',
-  },
-  tabText: {
-    color: '#888',
-    fontSize: 15,
-  },
-  tabTextActive: {
-    color: '#4da6ff',
-    fontWeight: '600',
+    marginBottom: spacing.lg,
   },
   content: {
     flex: 1,
@@ -389,93 +448,109 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 16,
+    gap: spacing.lg,
+    padding: spacing.lg,
+  },
+  empty: {
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  list: {
+    paddingBottom: spacing.lg,
   },
   scanColumn: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 16,
+    gap: spacing.md,
   },
   cameraFrame: {
-    borderRadius: 12,
+    borderRadius: radius.lg,
     overflow: 'hidden',
     backgroundColor: '#000',
+    borderWidth: 2,
   },
   scanHint: {
-    color: '#aaa',
-    fontSize: 15,
+    fontSize: 14,
     textAlign: 'center',
   },
   form: {
-    gap: 12,
+    gap: spacing.md,
   },
   input: {
-    backgroundColor: '#1d1d1d',
-    color: '#fff',
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md + 2,
     fontSize: 16,
-  },
-  button: {
-    backgroundColor: '#4da6ff',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: '#0a0a0a',
-    fontSize: 16,
-    fontWeight: '600',
   },
   link: {
-    color: '#4da6ff',
     textAlign: 'center',
-    paddingVertical: 8,
+    paddingVertical: spacing.sm,
+    fontSize: 15,
+    fontWeight: '600',
   },
   hint: {
-    color: '#aaa',
     fontSize: 15,
     textAlign: 'center',
   },
-  listItemRow: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    gap: spacing.sm,
   },
-  listItem: {
-    flex: 1,
-    backgroundColor: '#1d1d1d',
-    borderRadius: 8,
-    padding: 14,
+  serverCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
   },
-  listItemName: {
-    color: '#fff',
+  serverIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,140,255,0.10)',
+  },
+  serverName: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
-  listItemAddress: {
-    color: '#888',
-    fontSize: 14,
+  serverAddress: {
+    fontSize: 13,
     marginTop: 2,
   },
   forgetButton: {
-    marginLeft: 10,
-    padding: 8,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  forgetText: {
-    color: '#888',
-    fontSize: 16,
+  busyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
   },
-  status: {
-    color: '#4da6ff',
-    textAlign: 'center',
-    paddingVertical: 12,
+  busyText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
-  error: {
-    color: '#ff6b6b',
-    textAlign: 'center',
-    paddingVertical: 12,
+  errorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    marginBottom: spacing.md,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

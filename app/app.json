@@ -6,7 +6,12 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#111111",
+    "backgroundColor": "#005DE8",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#005DE8"
+    },
     "plugins": [
       [
         "expo-camera",
@@ -14,26 +19,30 @@
           "cameraPermission": "Scan the server QR code to connect to your PC."
         }
       ],
-      "./plugins/withLanCleartext.js"
+      "./plugins/withLanCleartext.js",
+      "./plugins/withSplash.js",
+      "expo-splash-screen"
     ],
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
         "NSBonjourServices": ["_remcontrol._tcp"],
         "NSLocalNetworkUsageDescription": "remcontrol uses your local network to discover your PC."
-      }
+      },
+      "bundleIdentifier": "fr.dorianmoy.remcontrol"
     },
     "android": {
       "package": "fr.dorianmoy.remcontrol",
       "permissions": [
         "android.permission.ACCESS_WIFI_STATE",
-        "android.permission.CHANGE_WIFI_MULTICAST_STATE"
+        "android.permission.CHANGE_WIFI_MULTICAST_STATE",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#111111",
+        "backgroundColor": "#005DE8",
         "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundImage": "./assets/android-icon-background.png"
       },
       "predictiveBackGestureEnabled": false
     },

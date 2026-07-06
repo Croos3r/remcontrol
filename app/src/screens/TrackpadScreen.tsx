@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
+import { type ComponentProps, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
   Keyboard,
@@ -12,7 +13,11 @@ import {
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Card } from '../components/Card';
+import { Chip } from '../components/Chip';
+import { Icon } from '../components/Icon';
 import type { Connection } from '../connection';
+import { radius, spacing, useTheme } from '../theme';
 
 interface Props {
   connection: Connection;
@@ -67,6 +72,7 @@ const F_KEYS: TapKey[] = Array.from({ length: 12 }, (_, i) => ({
 }));
 
 export default function TrackpadScreen({ connection, onDisconnect }: Props) {
+  const theme = useTheme();
   const [status, setStatus] = useState<Status>('connected');
   const [sensitivity, setSensitivity] = useState<number>(1.5);
   const [showSettings, setShowSettings] = useState(false);
@@ -322,61 +328,103 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.appBg }]}>
       {status === 'reconnecting' && (
-        <View style={styles.banner}>
-          <Text style={styles.bannerText}>Connection lost, reconnecting…</Text>
+        <View
+          style={[
+            styles.banner,
+            { backgroundColor: theme.warnTint, paddingTop: insets.top + spacing.sm },
+          ]}
+        >
+          <Icon name="refresh" size={16} color={theme.warn} />
+          <Text style={[styles.bannerText, { color: theme.warn }]}>
+            Connection lost, reconnecting…
+          </Text>
         </View>
       )}
 
       {status === 'reauth' && (
-        <View style={styles.reauthBanner}>
-          <Text style={styles.bannerText}>Token rejected. Re-pair on the Connect screen.</Text>
-          <TouchableOpacity style={styles.reauthButton} onPress={onDisconnect}>
+        <View
+          style={[
+            styles.banner,
+            { backgroundColor: theme.dangerTint, paddingTop: insets.top + spacing.sm },
+          ]}
+        >
+          <Icon name="alert-circle-outline" size={16} color={theme.danger} />
+          <Text style={[styles.bannerText, { color: theme.danger }]}>
+            Token rejected. Re-pair on the Connect screen.
+          </Text>
+          <TouchableOpacity
+            style={[styles.reauthButton, { backgroundColor: theme.danger }]}
+            onPress={onDisconnect}
+          >
             <Text style={styles.reauthButtonText}>Re-pair</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      <View style={[styles.topBar, { paddingTop: insets.top }]} pointerEvents="box-none">
-        <View style={styles.controlCluster} pointerEvents="auto">
-          <ControlButton label="⌨" active={keyboardOpen} onPress={toggleKeyboard} />
+      <View
+        style={[styles.topBar, { paddingTop: insets.top + spacing.sm }]}
+        pointerEvents="box-none"
+      >
+        <Card style={[styles.controlCluster, { backgroundColor: theme.surface }]} padded={false}>
           <ControlButton
-            label="⚙"
+            icon="keypad-outline"
+            label="Keyboard"
+            active={keyboardOpen}
+            onPress={toggleKeyboard}
+            themeColor={theme.primary}
+          />
+          <ControlButton
+            icon="settings-outline"
+            label="Settings"
             active={showSettings}
             onPress={() => setShowSettings((v) => !v)}
+            themeColor={theme.primary}
           />
           <View style={styles.spacer} />
           <View
-            style={[styles.statusDot, status === 'connected' ? styles.dotGreen : styles.dotOrange]}
+            style={[
+              styles.statusDot,
+              status === 'connected'
+                ? { backgroundColor: theme.ok }
+                : { backgroundColor: theme.warn },
+            ]}
           />
-          <ControlButton label="✕" onPress={disconnect} />
-        </View>
+          <ControlButton
+            icon="close"
+            label="Disconnect"
+            onPress={disconnect}
+            themeColor={theme.danger}
+          />
+        </Card>
         {showSettings && (
-          <View style={styles.settingsRow} pointerEvents="auto">
-            <Text style={styles.settingsLabel}>Speed</Text>
+          <Card style={styles.settingsCard} padded={false}>
+            <Text style={[styles.settingsLabel, { color: theme.muted }]}>Speed</Text>
             {SENSITIVITIES.map((s) => (
-              <TouchableOpacity
+              <Chip
                 key={s.label}
-                style={[styles.chip, sensitivity === s.value && styles.chipActive]}
+                label={s.label}
+                active={sensitivity === s.value}
                 onPress={() => setSensitivity(s.value)}
-              >
-                <Text style={[styles.chipText, sensitivity === s.value && styles.chipTextActive]}>
-                  {s.label}
-                </Text>
-              </TouchableOpacity>
+              />
             ))}
-          </View>
+          </Card>
         )}
       </View>
 
       <GestureDetector gesture={gesture}>
-        <View style={styles.pad}>
-          <Text style={styles.padHint}>
+        <LinearGradient
+          colors={theme.padGradient.colors}
+          start={theme.padGradient.start}
+          end={theme.padGradient.end}
+          style={[styles.pad, { borderColor: theme.border }]}
+        >
+          <Text style={[styles.padHint, { color: theme.muted }]}>
             1 finger: move · tap: click · 2 fingers: scroll · 2-finger tap: right click · double-tap
             and hold: drag
           </Text>
-        </View>
+        </LinearGradient>
       </GestureDetector>
 
       <TextInput
@@ -398,61 +446,67 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
       />
 
       {trayVisible && (
-        <View style={[styles.tray, { left: resolvedTrayPos.x, top: resolvedTrayPos.y }]}>
+        <View
+          style={[
+            styles.tray,
+            {
+              left: resolvedTrayPos.x,
+              top: resolvedTrayPos.y,
+              backgroundColor: theme.surface,
+              borderColor: theme.border,
+            },
+          ]}
+        >
           <GestureDetector gesture={trayDrag}>
-            <View style={styles.trayHandle}>
-              <Text style={styles.trayHandleText}>⋮⋮</Text>
+            <View style={[styles.trayHandle, { borderBottomColor: theme.border }]}>
+              <Icon name="reorder-three-outline" size={20} color={theme.muted} />
               <TouchableOpacity
                 style={styles.trayClose}
                 onPress={() => setTrayVisible(false)}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel="Hide keyboard tray"
               >
-                <Text style={styles.trayCloseText}>✕</Text>
+                <Icon name="close" size={16} color={theme.muted} />
               </TouchableOpacity>
             </View>
           </GestureDetector>
 
           <View style={styles.trayRow}>
             {MODIFIERS.map((m) => (
-              <TouchableOpacity
+              <KeyButton
                 key={m}
-                style={[styles.keyButton, heldMods.has(m) && styles.keyButtonActive]}
+                label={MODIFIER_LABEL[m]}
+                active={heldMods.has(m)}
                 onPress={() => toggleModifier(m)}
-              >
-                <Text style={[styles.keyText, heldMods.has(m) && styles.keyTextActive]}>
-                  {MODIFIER_LABEL[m]}
-                </Text>
-              </TouchableOpacity>
+              />
             ))}
           </View>
 
           <View style={styles.trayRow}>
             {TAP_KEYS.map((k) => (
-              <TouchableOpacity
+              <KeyButton
                 key={k.id}
-                style={styles.keyButton}
+                label={k.label}
                 onPress={() => {
                   releaseAllModifiers();
                   connection.key(k.id);
                 }}
-              >
-                <Text style={styles.keyText}>{k.label}</Text>
-              </TouchableOpacity>
+              />
             ))}
           </View>
 
           <View style={[styles.trayRow, styles.fRow]}>
             {F_KEYS.map((k) => (
-              <TouchableOpacity
+              <KeyButton
                 key={k.id}
-                style={[styles.keyButton, styles.fButton]}
+                label={k.label}
+                small
                 onPress={() => {
                   releaseAllModifiers();
                   connection.key(k.id);
                 }}
-              >
-                <Text style={[styles.keyText, styles.fText]}>{k.label}</Text>
-              </TouchableOpacity>
+              />
             ))}
           </View>
         </View>
@@ -460,10 +514,15 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
 
       {!trayVisible && (
         <TouchableOpacity
-          style={[styles.trayRestore, { bottom: 132 + insets.bottom }]}
+          style={[
+            styles.trayRestore,
+            { bottom: 132 + insets.bottom, backgroundColor: theme.primary },
+          ]}
           onPress={() => setTrayVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Show keyboard tray"
         >
-          <Text style={styles.trayRestoreText}>⋯</Text>
+          <Icon name="keypad-outline" size={22} color={theme.onGradient} />
         </TouchableOpacity>
       )}
     </View>
@@ -471,20 +530,71 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
 }
 
 function ControlButton({
+  icon,
   label,
   onPress,
   active = false,
+  themeColor,
+}: {
+  icon: ComponentProps<typeof Icon>['name'];
+  label: string;
+  onPress: () => void;
+  active?: boolean;
+  themeColor: string;
+}) {
+  const theme = useTheme();
+  return (
+    <TouchableOpacity
+      style={[
+        styles.controlButton,
+        active
+          ? { backgroundColor: theme.primary }
+          : { backgroundColor: theme.softSurface, borderColor: theme.border, borderWidth: 1 },
+      ]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: active }}
+    >
+      <Icon name={icon} size={20} color={active ? theme.onGradient : themeColor} />
+    </TouchableOpacity>
+  );
+}
+
+function KeyButton({
+  label,
+  onPress,
+  active = false,
+  small = false,
 }: {
   label: string;
   onPress: () => void;
   active?: boolean;
+  small?: boolean;
 }) {
+  const theme = useTheme();
   return (
     <TouchableOpacity
-      style={[styles.controlButton, active && styles.controlButtonActive]}
+      style={[
+        styles.keyButton,
+        active
+          ? { backgroundColor: theme.primary, borderColor: theme.primary }
+          : { backgroundColor: theme.softSurface, borderColor: theme.border },
+        small && styles.keyButtonSmall,
+      ]}
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
     >
-      <Text style={styles.controlButtonText}>{label}</Text>
+      <Text
+        style={[
+          styles.keyText,
+          { color: active ? theme.onGradient : theme.text },
+          small && styles.fText,
+        ]}
+      >
+        {label}
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -492,46 +602,83 @@ function ControlButton({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111',
   },
   banner: {
-    backgroundColor: '#7a4a00',
-    paddingTop: 48,
-    paddingBottom: 10,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
   },
   bannerText: {
-    color: '#ffd9a0',
-    fontSize: 14,
-  },
-  reauthBanner: {
-    backgroundColor: '#5a1a1a',
-    paddingTop: 48,
-    paddingBottom: 12,
-    alignItems: 'center',
-    gap: 10,
-  },
-  reauthButton: {
-    backgroundColor: '#4da6ff',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  reauthButtonText: {
-    color: '#0a0a0a',
+    flex: 1,
     fontSize: 14,
     fontWeight: '600',
+  },
+  reauthButton: {
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+  },
+  reauthButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  topBar: {
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
+  },
+  controlCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+    borderRadius: radius.pill,
+  },
+  controlButton: {
+    borderRadius: radius.pill,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  spacer: {
+    flex: 1,
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginHorizontal: spacing.xs,
+  },
+  settingsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.sm,
+    borderRadius: radius.lg,
+  },
+  settingsLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginRight: spacing.xs,
   },
   pad: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 16,
+    margin: spacing.lg,
+    borderRadius: radius.xl,
+    borderWidth: 1,
   },
   padHint: {
-    color: '#333',
     fontSize: 12,
     textAlign: 'center',
+    paddingHorizontal: spacing.xl,
   },
   hiddenInput: {
     position: 'absolute',
@@ -541,149 +688,74 @@ const styles = StyleSheet.create({
     height: 1,
     opacity: 0,
   },
-  topBar: {
-    backgroundColor: '#181818',
-  },
-  settingsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#181818',
-  },
-  settingsLabel: {
-    color: '#888',
-    marginRight: 4,
-  },
-  chip: {
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#242424',
-  },
-  chipActive: {
-    backgroundColor: '#4da6ff',
-  },
-  chipText: {
-    color: '#aaa',
-    fontSize: 13,
-  },
-  chipTextActive: {
-    color: '#0a0a0a',
-    fontWeight: '600',
-  },
-  controlCluster: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    backgroundColor: '#181818',
-    gap: 6,
-  },
-  controlButton: {
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: '#242424',
-  },
-  controlButtonActive: {
-    backgroundColor: '#3a3a3a',
-  },
-  controlButtonText: {
-    color: '#ddd',
-    fontSize: 16,
-  },
-  spacer: {
-    flex: 1,
-  },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 6,
-  },
-  dotGreen: {
-    backgroundColor: '#3ddc84',
-  },
-  dotOrange: {
-    backgroundColor: '#ffb347',
-  },
   tray: {
     position: 'absolute',
     width: 360,
-    backgroundColor: 'rgba(24,24,24,0.95)',
-    borderRadius: 12,
-    padding: 6,
-    gap: 4,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    padding: spacing.sm,
+    gap: spacing.xs,
   },
   trayHandle: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 20,
-  },
-  trayHandleText: {
-    color: '#555',
-    fontSize: 14,
+    height: 24,
+    borderBottomWidth: 1,
+    marginBottom: spacing.xs,
   },
   trayClose: {
     position: 'absolute',
     right: 0,
     top: 0,
-    padding: 4,
-  },
-  trayCloseText: {
-    color: '#888',
-    fontSize: 12,
+    padding: spacing.xs,
   },
   trayRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 4,
+    gap: spacing.xs,
   },
   fRow: {
     flexWrap: 'wrap',
   },
   keyButton: {
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    backgroundColor: '#242424',
-    minWidth: 36,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm + 2,
+    minWidth: 38,
+    minHeight: 44,
     alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
   },
-  keyButtonActive: {
-    backgroundColor: '#4da6ff',
+  keyButtonSmall: {
+    minWidth: 0,
+    paddingHorizontal: spacing.xs + 2,
+    paddingVertical: spacing.xs + 2,
+    minHeight: 36,
   },
   keyText: {
-    color: '#ddd',
     fontSize: 13,
-  },
-  keyTextActive: {
-    color: '#0a0a0a',
     fontWeight: '600',
-  },
-  fButton: {
-    minWidth: 0,
-    paddingHorizontal: 6,
-    paddingVertical: 6,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   fText: {
     fontSize: 11,
   },
   trayRestore: {
     position: 'absolute',
-    right: 16,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#242424',
+    right: spacing.lg,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  trayRestoreText: {
-    color: '#ddd',
-    fontSize: 20,
+    shadowColor: '#062B66',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 6,
   },
 });

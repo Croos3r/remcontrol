@@ -9,12 +9,11 @@ interface KeyPanelProps {
   heldMods: Set<ModifierKey>;
   onModifier: (m: ModifierKey) => void;
   onKey: (id: string) => void;
-  variant: 'float' | 'dock';
 }
 
-export function KeyPanel({ heldMods, onModifier, onKey, variant }: KeyPanelProps) {
+export function KeyPanel({ heldMods, onModifier, onKey }: KeyPanelProps) {
   return (
-    <View style={variant === 'dock' ? styles.dockRoot : styles.floatRoot}>
+    <View style={styles.root}>
       <View style={styles.row}>
         {MODIFIERS.map((m) => (
           <KeyButton
@@ -22,24 +21,17 @@ export function KeyPanel({ heldMods, onModifier, onKey, variant }: KeyPanelProps
             label={MODIFIER_LABEL[m]}
             active={heldMods.has(m)}
             onPress={() => onModifier(m)}
-            variant={variant}
           />
         ))}
       </View>
       <View style={styles.row}>
         {TAP_KEYS.map((k) => (
-          <KeyButton key={k.id} label={k.label} onPress={() => onKey(k.id)} variant={variant} />
+          <KeyButton key={k.id} label={k.label} onPress={() => onKey(k.id)} />
         ))}
       </View>
       <View style={styles.row}>
         {F_KEYS.map((k) => (
-          <KeyButton
-            key={k.id}
-            label={k.label}
-            small
-            onPress={() => onKey(k.id)}
-            variant={variant}
-          />
+          <KeyButton key={k.id} label={k.label} small onPress={() => onKey(k.id)} />
         ))}
       </View>
     </View>
@@ -51,20 +43,17 @@ function KeyButton({
   onPress,
   active = false,
   small = false,
-  variant,
 }: {
   label: string;
   onPress: () => void;
   active?: boolean;
   small?: boolean;
-  variant: 'float' | 'dock';
 }) {
   const theme = useTheme();
   return (
     <TouchableOpacity
       style={[
         styles.keyButton,
-        variant === 'dock' && styles.keyButtonDock,
         active
           ? { backgroundColor: theme.primary, borderColor: theme.primary }
           : { backgroundColor: theme.softSurface, borderColor: theme.border },
@@ -88,11 +77,7 @@ function KeyButton({
 }
 
 const styles = StyleSheet.create({
-  dockRoot: {
-    flex: 1,
-    gap: spacing.sm,
-  },
-  floatRoot: {
+  root: {
     gap: spacing.xs,
   },
   row: {
@@ -109,11 +94,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-  },
-  keyButtonDock: {
-    minWidth: 0,
-    flex: 1,
-    flexGrow: 1,
   },
   keyButtonSmall: {
     minWidth: 0,

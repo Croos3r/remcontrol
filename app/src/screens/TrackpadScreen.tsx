@@ -25,7 +25,7 @@ import { Icon } from '../components/Icon';
 import { KeyPanel, type ModifierKey } from '../components/KeyPanel';
 import type { Connection } from '../connection';
 import { DEFAULT_SENSITIVITY, SENSITIVITIES } from '../sensitivity';
-import { radius, spacing, useIsLandscape, useTheme } from '../theme';
+import { radius, spacing, useTheme } from '../theme';
 import { INITIAL_TOP_BAR_STATE, reduceTopBar } from '../topBarVisibility';
 
 interface Props {
@@ -48,7 +48,7 @@ export default function TrackpadScreen({ connection, onDisconnect, initialSensit
   const [status, setStatus] = useState<Status>('connected');
   const [sensitivity, setSensitivity] = useState<number>(initialSensitivity ?? DEFAULT_SENSITIVITY);
   const [topBarState, dispatchTopBar] = useReducer(reduceTopBar, INITIAL_TOP_BAR_STATE);
-  const [keyboardMode, setKeyboardMode] = useState<'off' | 'float' | 'dock'>('off');
+  const [keyboardMode, setKeyboardMode] = useState<'off' | 'float'>('off');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [inputValue, setInputValue] = useState(KEYBOARD_SENTINEL);
   const [heldMods, setHeldMods] = useState<Set<ModifierKey>>(new Set());
@@ -56,7 +56,6 @@ export default function TrackpadScreen({ connection, onDisconnect, initialSensit
 
   const insets = useSafeAreaInsets();
   const window = useWindowDimensions();
-  const isLandscape = useIsLandscape();
 
   const moveDx = useSharedValue(0);
   const moveDy = useSharedValue(0);
@@ -297,9 +296,6 @@ export default function TrackpadScreen({ connection, onDisconnect, initialSensit
         inputRef.current?.focus();
         return 'float';
       }
-      if (prev === 'float') {
-        return 'dock';
-      }
       closeKeyboard();
       return 'off';
     });
@@ -476,12 +472,7 @@ export default function TrackpadScreen({ connection, onDisconnect, initialSensit
         </View>
       </View>
 
-      <View
-        style={[
-          styles.body,
-          keyboardMode === 'dock' && (isLandscape ? styles.bodyRow : styles.bodyColumn),
-        ]}
-      >
+      <View style={styles.body}>
         <GestureDetector gesture={gesture}>
           <LinearGradient
             colors={theme.padGradient.colors}
@@ -495,27 +486,6 @@ export default function TrackpadScreen({ connection, onDisconnect, initialSensit
             </Text>
           </LinearGradient>
         </GestureDetector>
-
-        {keyboardMode === 'dock' && (
-          <Card
-            style={[
-              styles.dockPanel,
-              isLandscape ? styles.dockPanelSide : styles.dockPanelBottom,
-              { backgroundColor: theme.surface, borderColor: theme.border },
-            ]}
-            padded={false}
-          >
-            <KeyPanel
-              heldMods={heldMods}
-              onModifier={toggleModifier}
-              onKey={(id) => {
-                releaseAllModifiers();
-                connection.key(id);
-              }}
-              variant="dock"
-            />
-          </Card>
-        )}
       </View>
 
       <TextInput
@@ -568,7 +538,6 @@ export default function TrackpadScreen({ connection, onDisconnect, initialSensit
               releaseAllModifiers();
               connection.key(id);
             }}
-            variant="float"
           />
         </View>
       )}
@@ -737,23 +706,5 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
-  },
-  bodyRow: {
-    flexDirection: 'row',
-  },
-  bodyColumn: {
-    flexDirection: 'column',
-  },
-  dockPanel: {
-    margin: spacing.lg,
-    padding: spacing.sm,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-  },
-  dockPanelSide: {
-    width: 280,
-  },
-  dockPanelBottom: {
-    height: 240,
   },
 });

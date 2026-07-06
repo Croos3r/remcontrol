@@ -557,7 +557,7 @@ function ControlButton({
       accessibilityLabel={label}
       accessibilityState={{ selected: active }}
     >
-      <Icon name={icon} size={20} color={active ? theme.onGradient : themeColor} />
+      <Icon name={icon} size={16} color={active ? theme.onGradient : themeColor} />
     </TouchableOpacity>
   );
 }
@@ -590,7 +590,7 @@ const styles = StyleSheet.create({
   },
   topBar: {
     paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   revealZone: {
     position: 'absolute',
@@ -601,15 +601,15 @@ const styles = StyleSheet.create({
   controlCluster: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: spacing.sm,
-    gap: spacing.sm,
+    paddingHorizontal: spacing.xs + 2,
+    paddingVertical: spacing.xs,
+    gap: spacing.xs,
     borderRadius: radius.pill,
   },
   controlButton: {
     borderRadius: radius.pill,
-    width: 44,
-    height: 44,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
   },

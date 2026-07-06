@@ -1,13 +1,13 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { type ComponentProps, useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Dimensions,
   Keyboard,
   Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -16,8 +16,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Card } from '../components/Card';
 import { Chip } from '../components/Chip';
 import { Icon } from '../components/Icon';
+import { KeyPanel, type ModifierKey } from '../components/KeyPanel';
 import type { Connection } from '../connection';
-import { radius, spacing, useTheme } from '../theme';
+import { radius, spacing, useIsLandscape, useTheme } from '../theme';
 
 interface Props {
   connection: Connection;
@@ -37,53 +38,20 @@ const DOUBLE_TAP_DRAG_WINDOW_MS = 300;
 const RECONNECT_DELAYS_MS = [1000, 2000, 4000, 8000, 16000];
 const KEYBOARD_SENTINEL = ' ';
 
-const MODIFIERS = ['ctrl', 'alt', 'shift', 'super'] as const;
-type ModifierKey = (typeof MODIFIERS)[number];
-const MODIFIER_LABEL: Record<ModifierKey, string> = {
-  ctrl: 'Ctrl',
-  alt: 'Alt',
-  shift: 'Shift',
-  super: 'Super',
-};
-
-interface TapKey {
-  id: string;
-  label: string;
-}
-const TAP_KEYS: TapKey[] = [
-  { id: 'esc', label: 'Esc' },
-  { id: 'tab', label: 'Tab' },
-  { id: 'space', label: 'Space' },
-  { id: 'enter', label: '⏎' },
-  { id: 'backspace', label: '⌫' },
-  { id: 'delete', label: 'Del' },
-  { id: 'home', label: 'Home' },
-  { id: 'end', label: 'End' },
-  { id: 'pageup', label: 'PgUp' },
-  { id: 'pagedown', label: 'PgDn' },
-  { id: 'up', label: '↑' },
-  { id: 'down', label: '↓' },
-  { id: 'left', label: '←' },
-  { id: 'right', label: '→' },
-];
-const F_KEYS: TapKey[] = Array.from({ length: 12 }, (_, i) => ({
-  id: `f${i + 1}`,
-  label: `F${i + 1}`,
-}));
-
 export default function TrackpadScreen({ connection, onDisconnect }: Props) {
   const theme = useTheme();
   const [status, setStatus] = useState<Status>('connected');
   const [sensitivity, setSensitivity] = useState<number>(1.5);
   const [showSettings, setShowSettings] = useState(false);
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [keyboardMode, setKeyboardMode] = useState<'off' | 'float' | 'dock'>('off');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [inputValue, setInputValue] = useState(KEYBOARD_SENTINEL);
   const [heldMods, setHeldMods] = useState<Set<ModifierKey>>(new Set());
-  const [trayVisible, setTrayVisible] = useState(false);
   const [trayPos, setTrayPos] = useState<{ x: number; y: number } | null>(null);
 
   const insets = useSafeAreaInsets();
+  const window = useWindowDimensions();
+  const isLandscape = useIsLandscape();
 
   const moveDx = useSharedValue(0);
   const moveDy = useSharedValue(0);
@@ -165,11 +133,9 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const onShow = (e: { endCoordinates?: { height?: number } }) => {
       setKeyboardHeight(e.endCoordinates?.height ?? 0);
-      setKeyboardOpen(true);
     };
     const onHide = () => {
       setKeyboardHeight(0);
-      setKeyboardOpen(false);
       inputRef.current?.blur();
     };
     const showSub = Keyboard.addListener(showEvent, onShow as never);
@@ -241,12 +207,24 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
 
   const gesture = Gesture.Race(scrollPan, twoFingerTap, movePan, singleTap);
 
+  const closeKeyboard = () => {
+    inputRef.current?.blur();
+    setKeyboardMode('off');
+    setTrayPos(null);
+  };
+
   const toggleKeyboard = () => {
-    if (keyboardOpen) {
-      inputRef.current?.blur();
-    } else {
-      inputRef.current?.focus();
-    }
+    setKeyboardMode((prev) => {
+      if (prev === 'off') {
+        inputRef.current?.focus();
+        return 'float';
+      }
+      if (prev === 'float') {
+        return 'dock';
+      }
+      closeKeyboard();
+      return 'off';
+    });
   };
 
   const onChangeText = (text: string) => {
@@ -304,27 +282,24 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
     });
   };
 
+  const trayW = Math.min(window.width - 32, 360);
+  const trayH = 168;
+
   const trayDrag = Gesture.Pan()
     .runOnJS(true)
     .blocksExternalGesture(gesture as never)
     .onUpdate((e) => {
-      const win = Dimensions.get('window');
-      const w = Math.min(win.width - 32, 360);
-      const h = 168;
-      const x = Math.max(0, Math.min(win.width - w, e.absoluteX - w / 2));
+      const x = Math.max(0, Math.min(window.width - trayW, e.absoluteX - trayW / 2));
       const y = Math.max(
         0,
-        Math.min(win.height - h - keyboardHeight - insets.bottom, e.absoluteY - 16),
+        Math.min(window.height - trayH - keyboardHeight - insets.bottom, e.absoluteY - 16),
       );
       setTrayPos({ x, y });
     });
 
-  const screen = Dimensions.get('window');
-  const trayW = Math.min(screen.width - 32, 360);
-  const trayH = 168;
   const resolvedTrayPos = trayPos ?? {
-    x: screen.width - trayW - 16,
-    y: screen.height - trayH - 132 - insets.bottom,
+    x: window.width - trayW - 16,
+    y: window.height - trayH - 16 - keyboardHeight - insets.bottom,
   };
 
   return (
@@ -371,7 +346,7 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
           <ControlButton
             icon="keypad-outline"
             label="Keyboard"
-            active={keyboardOpen}
+            active={keyboardMode !== 'off'}
             onPress={toggleKeyboard}
             themeColor={theme.primary}
           />
@@ -413,19 +388,47 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
         )}
       </View>
 
-      <GestureDetector gesture={gesture}>
-        <LinearGradient
-          colors={theme.padGradient.colors}
-          start={theme.padGradient.start}
-          end={theme.padGradient.end}
-          style={[styles.pad, { borderColor: theme.border }]}
-        >
-          <Text style={[styles.padHint, { color: theme.muted }]}>
-            1 finger: move · tap: click · 2 fingers: scroll · 2-finger tap: right click · double-tap
-            and hold: drag
-          </Text>
-        </LinearGradient>
-      </GestureDetector>
+      <View
+        style={[
+          styles.body,
+          keyboardMode === 'dock' && (isLandscape ? styles.bodyRow : styles.bodyColumn),
+        ]}
+      >
+        <GestureDetector gesture={gesture}>
+          <LinearGradient
+            colors={theme.padGradient.colors}
+            start={theme.padGradient.start}
+            end={theme.padGradient.end}
+            style={[styles.pad, { borderColor: theme.border }]}
+          >
+            <Text style={[styles.padHint, { color: theme.muted }]}>
+              1 finger: move · tap: click · 2 fingers: scroll · 2-finger tap: right click ·
+              double-tap and hold: drag
+            </Text>
+          </LinearGradient>
+        </GestureDetector>
+
+        {keyboardMode === 'dock' && (
+          <Card
+            style={[
+              styles.dockPanel,
+              isLandscape ? styles.dockPanelSide : styles.dockPanelBottom,
+              { backgroundColor: theme.surface, borderColor: theme.border },
+            ]}
+            padded={false}
+          >
+            <KeyPanel
+              heldMods={heldMods}
+              onModifier={toggleModifier}
+              onKey={(id) => {
+                releaseAllModifiers();
+                connection.key(id);
+              }}
+              variant="dock"
+            />
+          </Card>
+        )}
+      </View>
 
       <TextInput
         ref={inputRef}
@@ -434,8 +437,6 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
         onChangeText={onChangeText}
         onKeyPress={(e) => onKeyPress(e.nativeEvent.key)}
         onSubmitEditing={() => connection.key('enter')}
-        onFocus={() => setKeyboardOpen(true)}
-        onBlur={() => setKeyboardOpen(false)}
         autoCapitalize="none"
         autoCorrect={false}
         autoComplete="off"
@@ -445,13 +446,14 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
         submitBehavior="submit"
       />
 
-      {trayVisible && (
+      {keyboardMode === 'float' && (
         <View
           style={[
             styles.tray,
             {
               left: resolvedTrayPos.x,
               top: resolvedTrayPos.y,
+              width: trayW,
               backgroundColor: theme.surface,
               borderColor: theme.border,
             },
@@ -462,7 +464,7 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
               <Icon name="reorder-three-outline" size={20} color={theme.muted} />
               <TouchableOpacity
                 style={styles.trayClose}
-                onPress={() => setTrayVisible(false)}
+                onPress={closeKeyboard}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 accessibilityRole="button"
                 accessibilityLabel="Hide keyboard tray"
@@ -471,59 +473,16 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
               </TouchableOpacity>
             </View>
           </GestureDetector>
-
-          <View style={styles.trayRow}>
-            {MODIFIERS.map((m) => (
-              <KeyButton
-                key={m}
-                label={MODIFIER_LABEL[m]}
-                active={heldMods.has(m)}
-                onPress={() => toggleModifier(m)}
-              />
-            ))}
-          </View>
-
-          <View style={styles.trayRow}>
-            {TAP_KEYS.map((k) => (
-              <KeyButton
-                key={k.id}
-                label={k.label}
-                onPress={() => {
-                  releaseAllModifiers();
-                  connection.key(k.id);
-                }}
-              />
-            ))}
-          </View>
-
-          <View style={[styles.trayRow, styles.fRow]}>
-            {F_KEYS.map((k) => (
-              <KeyButton
-                key={k.id}
-                label={k.label}
-                small
-                onPress={() => {
-                  releaseAllModifiers();
-                  connection.key(k.id);
-                }}
-              />
-            ))}
-          </View>
+          <KeyPanel
+            heldMods={heldMods}
+            onModifier={toggleModifier}
+            onKey={(id) => {
+              releaseAllModifiers();
+              connection.key(id);
+            }}
+            variant="float"
+          />
         </View>
-      )}
-
-      {!trayVisible && (
-        <TouchableOpacity
-          style={[
-            styles.trayRestore,
-            { bottom: 132 + insets.bottom, backgroundColor: theme.primary },
-          ]}
-          onPress={() => setTrayVisible(true)}
-          accessibilityRole="button"
-          accessibilityLabel="Show keyboard tray"
-        >
-          <Icon name="keypad-outline" size={22} color={theme.onGradient} />
-        </TouchableOpacity>
       )}
     </View>
   );
@@ -557,44 +516,6 @@ function ControlButton({
       accessibilityState={{ selected: active }}
     >
       <Icon name={icon} size={20} color={active ? theme.onGradient : themeColor} />
-    </TouchableOpacity>
-  );
-}
-
-function KeyButton({
-  label,
-  onPress,
-  active = false,
-  small = false,
-}: {
-  label: string;
-  onPress: () => void;
-  active?: boolean;
-  small?: boolean;
-}) {
-  const theme = useTheme();
-  return (
-    <TouchableOpacity
-      style={[
-        styles.keyButton,
-        active
-          ? { backgroundColor: theme.primary, borderColor: theme.primary }
-          : { backgroundColor: theme.softSurface, borderColor: theme.border },
-        small && styles.keyButtonSmall,
-      ]}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-    >
-      <Text
-        style={[
-          styles.keyText,
-          { color: active ? theme.onGradient : theme.text },
-          small && styles.fText,
-        ]}
-      >
-        {label}
-      </Text>
     </TouchableOpacity>
   );
 }
@@ -690,7 +611,6 @@ const styles = StyleSheet.create({
   },
   tray: {
     position: 'absolute',
-    width: 360,
     borderRadius: radius.lg,
     borderWidth: 1,
     padding: spacing.sm,
@@ -710,52 +630,25 @@ const styles = StyleSheet.create({
     top: 0,
     padding: spacing.xs,
   },
-  trayRow: {
+  body: {
+    flex: 1,
+  },
+  bodyRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
   },
-  fRow: {
-    flexWrap: 'wrap',
+  bodyColumn: {
+    flexDirection: 'column',
   },
-  keyButton: {
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm + 2,
-    minWidth: 38,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
+  dockPanel: {
+    margin: spacing.lg,
+    padding: spacing.sm,
+    borderRadius: radius.lg,
     borderWidth: 1,
   },
-  keyButtonSmall: {
-    minWidth: 0,
-    paddingHorizontal: spacing.xs + 2,
-    paddingVertical: spacing.xs + 2,
-    minHeight: 36,
+  dockPanelSide: {
+    width: 280,
   },
-  keyText: {
-    fontSize: 13,
-    fontWeight: '600',
-    textAlign: 'center',
-    textAlignVertical: 'center',
-    includeFontPadding: false,
-  },
-  fText: {
-    fontSize: 11,
-  },
-  trayRestore: {
-    position: 'absolute',
-    right: spacing.lg,
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#062B66',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 6,
+  dockPanelBottom: {
+    height: 240,
   },
 });

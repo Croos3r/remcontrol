@@ -3,7 +3,7 @@
     "name": "remcontrol",
     "slug": "remcontrol",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#005DE8",

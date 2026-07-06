@@ -1,10 +1,12 @@
 import { type BarcodeScanningResult, CameraView, useCameraPermissions } from 'expo-camera';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type ComponentProps, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
   FlatList,
+  Platform,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -13,11 +15,14 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '../components/Buttons';
 import { Card } from '../components/Card';
+import { Chip } from '../components/Chip';
 import { GradientHeader } from '../components/GradientHeader';
 import { Icon } from '../components/Icon';
 import { TabBar } from '../components/TabBar';
 import { Connection } from '../connection';
+import { DEFAULT_PREFS, loadPrefs, type Prefs, savePrefs } from '../prefs';
 import { probeServer } from '../probe';
+import { SENSITIVITIES } from '../sensitivity';
 import { forgetConnection, loadRecentConnections, saveConnection } from '../storage';
 import { radius, spacing, useTheme } from '../theme';
 import type { ServerInfo } from '../types';
@@ -47,7 +52,7 @@ function createZeroconf(): Zeroconf | null {
   }
 }
 
-type Tab = 'scan' | 'discover' | 'manual' | 'recent';
+type Tab = 'scan' | 'discover' | 'manual' | 'recent' | 'settings';
 
 type ReachStatus = 'checking' | 'ok' | 'fail';
 
@@ -74,6 +79,15 @@ const TAB_LABELS: Record<Tab, string> = {
   discover: 'Discover',
   manual: 'Manual',
   recent: 'Recent',
+  settings: 'Settings',
+};
+
+const TAB_ICONS: Record<Tab, ComponentProps<typeof Icon>['name']> = {
+  scan: 'scan-outline',
+  discover: 'wifi-outline',
+  manual: 'create-outline',
+  recent: 'time-outline',
+  settings: 'settings-outline',
 };
 
 export default function ConnectScreen({ onConnected }: Props) {
@@ -92,12 +106,22 @@ export default function ConnectScreen({ onConnected }: Props) {
 
   const [recent, setRecent] = useState<ServerInfo[]>([]);
   const [statuses, setStatuses] = useState<Record<string, ReachStatus>>({});
+  const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [ip, setIp] = useState('');
   const [port, setPort] = useState('17890');
   const [token, setToken] = useState('');
 
   useEffect(() => {
     void loadRecentConnections().then(setRecent);
+    void loadPrefs().then(setPrefs);
+  }, []);
+
+  const updatePrefs = useCallback((patch: Partial<Prefs>) => {
+    setPrefs((prev) => {
+      const next = { ...prev, ...patch };
+      void savePrefs(next);
+      return next;
+    });
   }, []);
 
   const probeAll = useCallback((servers: ServerInfo[]) => {
@@ -373,8 +397,47 @@ export default function ConnectScreen({ onConnected }: Props) {
     </View>
   );
 
+  const renderSettings = () => (
+    <View style={styles.form}>
+      <Card style={styles.settingsCard}>
+        <Text style={[styles.settingsTitle, { color: theme.text }]}>Default trackpad speed</Text>
+        <Text style={[styles.settingsHint, { color: theme.muted }]}>
+          Used when opening the trackpad.
+        </Text>
+        <View style={styles.chipRow}>
+          {SENSITIVITIES.map((s) => (
+            <Chip
+              key={s.label}
+              label={s.label}
+              active={prefs.defaultSensitivity === s.value}
+              onPress={() => updatePrefs({ defaultSensitivity: s.value })}
+            />
+          ))}
+        </View>
+      </Card>
+
+      <Card style={styles.settingsCard}>
+        <View style={styles.settingsRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.settingsTitle, { color: theme.text }]}>Auto-reconnect</Text>
+            <Text style={[styles.settingsHint, { color: theme.muted }]}>
+              Reconnect to the last server on launch.
+            </Text>
+          </View>
+          <Switch
+            value={prefs.autoReconnect}
+            onValueChange={(v) => updatePrefs({ autoReconnect: v })}
+            trackColor={{ false: theme.disabled, true: theme.primary }}
+            thumbColor={Platform.OS === 'android' ? theme.surface : undefined}
+          />
+        </View>
+      </Card>
+    </View>
+  );
+
   const tabs: Tab[] = ['scan', 'discover', 'manual'];
   if (recent.length > 0) tabs.push('recent');
+  tabs.push('settings');
 
   return (
     <View
@@ -386,7 +449,7 @@ export default function ConnectScreen({ onConnected }: Props) {
       <GradientHeader title="RemControl" subtitle="Connect a computer" icon={LOGO} />
       <TabBar
         style={styles.tabs}
-        tabs={tabs.map((t) => ({ key: t, label: TAB_LABELS[t] }))}
+        tabs={tabs.map((t) => ({ key: t, label: TAB_LABELS[t], icon: TAB_ICONS[t] }))}
         value={tab}
         onChange={(t) => {
           setTab(t);
@@ -398,6 +461,7 @@ export default function ConnectScreen({ onConnected }: Props) {
         {tab === 'discover' && renderDiscover()}
         {tab === 'manual' && renderManual()}
         {tab === 'recent' && renderRecent()}
+        {tab === 'settings' && renderSettings()}
       </View>
       {busy && (
         <View style={styles.busyRow}>
@@ -516,6 +580,29 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: spacing.md,
+  },
+  settingsCard: {
+    gap: spacing.xs,
+    padding: spacing.md,
+  },
+  settingsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  settingsTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  settingsHint: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
   },
   input: {
     paddingHorizontal: spacing.lg,

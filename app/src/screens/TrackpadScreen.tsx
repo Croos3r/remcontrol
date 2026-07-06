@@ -24,13 +24,14 @@ import { Chip } from '../components/Chip';
 import { Icon } from '../components/Icon';
 import { KeyPanel, type ModifierKey } from '../components/KeyPanel';
 import type { Connection } from '../connection';
-import { SENSITIVITIES } from '../sensitivity';
+import { DEFAULT_SENSITIVITY, SENSITIVITIES } from '../sensitivity';
 import { radius, spacing, useIsLandscape, useTheme } from '../theme';
 import { INITIAL_TOP_BAR_STATE, reduceTopBar } from '../topBarVisibility';
 
 interface Props {
   connection: Connection;
   onDisconnect: () => void;
+  initialSensitivity?: number;
 }
 
 type Status = 'connected' | 'reconnecting' | 'reauth';
@@ -42,10 +43,10 @@ const DOUBLE_TAP_DRAG_WINDOW_MS = 300;
 const RECONNECT_DELAYS_MS = [1000, 2000, 4000, 8000, 16000];
 const KEYBOARD_SENTINEL = ' ';
 
-export default function TrackpadScreen({ connection, onDisconnect }: Props) {
+export default function TrackpadScreen({ connection, onDisconnect, initialSensitivity }: Props) {
   const theme = useTheme();
   const [status, setStatus] = useState<Status>('connected');
-  const [sensitivity, setSensitivity] = useState<number>(1.5);
+  const [sensitivity, setSensitivity] = useState<number>(initialSensitivity ?? DEFAULT_SENSITIVITY);
   const [topBarState, dispatchTopBar] = useReducer(reduceTopBar, INITIAL_TOP_BAR_STATE);
   const [keyboardMode, setKeyboardMode] = useState<'off' | 'float' | 'dock'>('off');
   const [keyboardHeight, setKeyboardHeight] = useState(0);

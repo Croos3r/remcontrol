@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Card } from './src/components/Card';
 import { Icon } from './src/components/Icon';
 import { Connection } from './src/connection';
+import { loadPrefs, type Prefs } from './src/prefs';
 import ConnectScreen from './src/screens/ConnectScreen';
 import TrackpadScreen from './src/screens/TrackpadScreen';
 import { loadLastConnection } from './src/storage';
@@ -17,41 +18,50 @@ type Screen = 'restoring' | 'connect' | 'trackpad';
 export default function App() {
   const theme = useTheme();
   const [screen, setScreen] = useState<Screen>('restoring');
+  const [prefs, setPrefs] = useState<Prefs | null>(null);
   const connectionRef = useRef<Connection | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    const giveUp = () => {
-      if (!cancelled) {
-        connectionRef.current?.close();
-        connectionRef.current = null;
-        setScreen('connect');
-      }
-    };
-    void loadLastConnection().then((info: ServerInfo | null) => {
+    void loadPrefs().then((loaded) => {
       if (cancelled) return;
-      if (!info) {
+      setPrefs(loaded);
+      if (!loaded.autoReconnect) {
         setScreen('connect');
         return;
       }
-      const timer = setTimeout(giveUp, 5000);
-      const conn = new Connection(info, {
-        onOpen: () => {
-          clearTimeout(timer);
-          if (cancelled) {
-            conn.close();
-            return;
-          }
-          connectionRef.current = conn;
-          setScreen('trackpad');
-        },
-        onError: () => {
-          clearTimeout(timer);
-          giveUp();
-        },
+      void loadLastConnection().then((info: ServerInfo | null) => {
+        if (cancelled || !info) {
+          setScreen('connect');
+          return;
+        }
+        const timer = setTimeout(() => {
+          if (cancelled) return;
+          connectionRef.current?.close();
+          connectionRef.current = null;
+          setScreen('connect');
+        }, 5000);
+        const conn = new Connection(info, {
+          onOpen: () => {
+            clearTimeout(timer);
+            if (cancelled) {
+              conn.close();
+              return;
+            }
+            connectionRef.current = conn;
+            setScreen('trackpad');
+          },
+          onError: () => {
+            clearTimeout(timer);
+            if (cancelled) return;
+            connectionRef.current?.close();
+            connectionRef.current = null;
+            setScreen('connect');
+          },
+        });
+        connectionRef.current = conn;
+        conn.connect();
       });
-      connectionRef.current = conn;
-      conn.connect();
     });
     return () => {
       cancelled = true;
@@ -89,7 +99,11 @@ export default function App() {
         )}
         {screen === 'connect' && <ConnectScreen onConnected={onConnected} />}
         {screen === 'trackpad' && connectionRef.current && (
-          <TrackpadScreen connection={connectionRef.current} onDisconnect={onDisconnect} />
+          <TrackpadScreen
+            connection={connectionRef.current}
+            onDisconnect={onDisconnect}
+            initialSensitivity={prefs?.defaultSensitivity}
+          />
         )}
       </SafeAreaProvider>
     </GestureHandlerRootView>

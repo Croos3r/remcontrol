@@ -8,7 +8,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -66,12 +65,20 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
   const scrollDx = useSharedValue(0);
   const scrollDy = useSharedValue(0);
   const sensitivitySV = useSharedValue(sensitivity);
-  const topBarVisibleSV = useSharedValue(1);
+  const drawerProgress = useSharedValue(1);
+  const dragStartProgress = useSharedValue(1);
+  const drawerContentSV = useSharedValue(56);
 
-  const topBarAnimatedStyle = useAnimatedStyle(() => ({
-    opacity: topBarVisibleSV.value,
-    transform: [{ translateY: (1 - topBarVisibleSV.value) * -24 }],
+  const drawerAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: -drawerContentSV.value * (1 - drawerProgress.value) }],
   }));
+
+  const onDrawerContentLayout = useCallback(
+    (e: { nativeEvent: { layout: { height: number } } }) => {
+      drawerContentSV.value = e.nativeEvent.layout.height;
+    },
+    [drawerContentSV],
+  );
 
   const inputRef = useRef<TextInput>(null);
   const lastTapRef = useRef(0);
@@ -167,8 +174,8 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
   }, [topBarState.visible, topBarState.settingsOpen]);
 
   useEffect(() => {
-    topBarVisibleSV.value = withTiming(topBarState.visible ? 1 : 0, { duration: 180 });
-  }, [topBarState.visible, topBarVisibleSV]);
+    drawerProgress.value = withTiming(topBarState.visible ? 1 : 0, { duration: 180 });
+  }, [topBarState.visible, drawerProgress]);
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;
@@ -246,6 +253,37 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
     });
 
   const gesture = Gesture.Race(scrollPan, twoFingerTap, movePan, singleTap);
+
+  const drawerPan = Gesture.Pan()
+    .onStart(() => {
+      'worklet';
+      dragStartProgress.value = drawerProgress.value;
+    })
+    .onUpdate((e) => {
+      'worklet';
+      const span = drawerContentSV.value || 1;
+      const next = dragStartProgress.value + e.translationY / span;
+      drawerProgress.value = Math.min(1, Math.max(0, next));
+    })
+    .onEnd((e) => {
+      'worklet';
+      const span = drawerContentSV.value || 1;
+      const projected = drawerProgress.value + (e.velocityY / span) * 0.1;
+      const open = projected >= 0.5;
+      drawerProgress.value = withTiming(open ? 1 : 0, { duration: 160 });
+      runOnJS(dispatchTopBar)(open ? { type: 'DRAWER_OPEN' } : { type: 'DRAWER_CLOSE' });
+    });
+
+  const drawerTap = Gesture.Tap()
+    .maxDuration(250)
+    .runOnJS(true)
+    .onEnd((_e, success) => {
+      if (success) {
+        dispatchTopBar(topBarState.visible ? { type: 'DRAWER_CLOSE' } : { type: 'DRAWER_OPEN' });
+      }
+    });
+
+  const drawerGesture = Gesture.Exclusive(drawerPan, drawerTap);
 
   const closeKeyboard = () => {
     inputRef.current?.blur();
@@ -378,64 +416,69 @@ export default function TrackpadScreen({ connection, onDisconnect }: Props) {
         </View>
       )}
 
-      <View
-        style={[styles.topBar, { paddingTop: insets.top + spacing.sm }]}
-        pointerEvents="box-none"
-      >
+      <View style={styles.drawerRoot} pointerEvents="box-none">
         <Animated.View
-          style={topBarAnimatedStyle}
-          pointerEvents={topBarState.visible ? 'auto' : 'none'}
+          style={[styles.drawer, { paddingTop: insets.top }, drawerAnimatedStyle]}
+          pointerEvents="box-none"
         >
-          <Card style={[styles.controlCluster, { backgroundColor: theme.surface }]} padded={false}>
-            <ControlButton
-              icon="keypad-outline"
-              label="Keyboard"
-              active={keyboardMode !== 'off'}
-              onPress={toggleKeyboard}
-              themeColor={theme.primary}
-            />
-            <ControlButton
-              icon="settings-outline"
-              label="Settings"
-              active={topBarState.settingsOpen}
-              onPress={() => dispatchTopBar({ type: 'SETTINGS_TOGGLE' })}
-              themeColor={theme.primary}
-            />
-            <View style={styles.spacer} />
-            <View
-              style={[
-                styles.statusDot,
-                status === 'connected'
-                  ? { backgroundColor: theme.ok }
-                  : { backgroundColor: theme.warn },
-              ]}
-            />
-            <ControlButton
-              icon="close"
-              label="Disconnect"
-              onPress={disconnect}
-              themeColor={theme.danger}
-            />
-          </Card>
-        </Animated.View>
-        {!topBarState.visible && (
-          <TouchableWithoutFeedback onPress={() => dispatchTopBar({ type: 'REVEAL_TAP' })}>
-            <View style={[styles.revealZone, { height: insets.top + 32 }]} />
-          </TouchableWithoutFeedback>
-        )}
-        {topBarState.settingsOpen && (
-          <Card style={styles.settingsCard} padded={false}>
-            <Text style={[styles.settingsLabel, { color: theme.muted }]}>Speed</Text>
-            {SENSITIVITIES.map((s) => (
-              <Chip
-                key={s.label}
-                label={s.label}
-                active={sensitivity === s.value}
-                onPress={() => setSensitivity(s.value)}
+          <View
+            onLayout={onDrawerContentLayout}
+            pointerEvents={topBarState.visible ? 'auto' : 'box-none'}
+          >
+            <Card
+              style={[styles.controlCluster, { backgroundColor: theme.surface }]}
+              padded={false}
+            >
+              <ControlButton
+                icon="keypad-outline"
+                label="Keyboard"
+                active={keyboardMode !== 'off'}
+                onPress={toggleKeyboard}
+                themeColor={theme.primary}
               />
-            ))}
-          </Card>
-        )}
+              <ControlButton
+                icon="settings-outline"
+                label="Settings"
+                active={topBarState.settingsOpen}
+                onPress={() => dispatchTopBar({ type: 'SETTINGS_TOGGLE' })}
+                themeColor={theme.primary}
+              />
+              <View style={styles.spacer} />
+              <View
+                style={[
+                  styles.statusDot,
+                  status === 'connected'
+                    ? { backgroundColor: theme.ok }
+                    : { backgroundColor: theme.warn },
+                ]}
+              />
+              <ControlButton
+                icon="close"
+                label="Disconnect"
+                onPress={disconnect}
+                themeColor={theme.danger}
+              />
+            </Card>
+            {topBarState.settingsOpen && (
+              <Card style={styles.settingsCard} padded={false}>
+                <Text style={[styles.settingsLabel, { color: theme.muted }]}>Speed</Text>
+                {SENSITIVITIES.map((s) => (
+                  <Chip
+                    key={s.label}
+                    label={s.label}
+                    active={sensitivity === s.value}
+                    onPress={() => setSensitivity(s.value)}
+                  />
+                ))}
+              </Card>
+            )}
+          </View>
+          <GestureDetector gesture={drawerGesture}>
+            <View style={styles.drawerHandle}>
+              <View style={[styles.drawerHandlePill, { backgroundColor: theme.border }]} />
+            </View>
+          </GestureDetector>
+        </Animated.View>
       </View>
 
       <View
@@ -575,6 +618,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   banner: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
@@ -596,15 +644,26 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-  topBar: {
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  revealZone: {
+  drawerRoot: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
+    zIndex: 10,
+    paddingHorizontal: spacing.md,
+  },
+  drawer: {
+    alignItems: 'stretch',
+  },
+  drawerHandle: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+  },
+  drawerHandlePill: {
+    width: 44,
+    height: 5,
+    borderRadius: 3,
   },
   controlCluster: {
     flexDirection: 'row',

@@ -1,6 +1,6 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { radius, spacing, useTheme } from '../theme';
-import type { ModifierKey } from './keys';
+import { F_KEYS, MODIFIER_LABEL, MODIFIERS, type ModifierKey, TAP_KEYS } from './keys';
 
 export type { ModifierKey } from './keys';
 export { F_KEYS, MODIFIER_LABEL, MODIFIERS, TAP_KEYS } from './keys';

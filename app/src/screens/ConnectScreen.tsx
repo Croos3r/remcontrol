@@ -1,5 +1,5 @@
 import { type BarcodeScanningResult, CameraView, useCameraPermissions } from 'expo-camera';
-import { type ComponentProps, useEffect, useRef, useState } from 'react';
+import { type ComponentProps, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -17,6 +17,7 @@ import { GradientHeader } from '../components/GradientHeader';
 import { Icon } from '../components/Icon';
 import { TabBar } from '../components/TabBar';
 import { Connection } from '../connection';
+import { probeServer } from '../probe';
 import { forgetConnection, loadRecentConnections, saveConnection } from '../storage';
 import { radius, spacing, useTheme } from '../theme';
 import type { ServerInfo } from '../types';
@@ -48,6 +49,8 @@ function createZeroconf(): Zeroconf | null {
 
 type Tab = 'scan' | 'discover' | 'manual' | 'recent';
 
+type ReachStatus = 'checking' | 'ok' | 'fail';
+
 interface Discovered {
   name: string;
   ip: string;
@@ -60,6 +63,10 @@ interface Props {
 
 function displayName(info: ServerInfo): string {
   return info.name?.trim() || `${info.ip}:${info.port}`;
+}
+
+function serverKey(ip: string, port: number): string {
+  return `${ip}:${port}`;
 }
 
 const TAB_LABELS: Record<Tab, string> = {
@@ -91,6 +98,7 @@ export default function ConnectScreen({ onConnected }: Props) {
   const [pendingServer, setPendingServer] = useState<Discovered | null>(null);
 
   const [recent, setRecent] = useState<ServerInfo[]>([]);
+  const [statuses, setStatuses] = useState<Record<string, ReachStatus>>({});
   const [ip, setIp] = useState('');
   const [port, setPort] = useState('17890');
   const [token, setToken] = useState('');
@@ -98,6 +106,24 @@ export default function ConnectScreen({ onConnected }: Props) {
   useEffect(() => {
     void loadRecentConnections().then(setRecent);
   }, []);
+
+  const probeAll = useCallback((servers: ServerInfo[]) => {
+    setStatuses((prev) => {
+      const next = { ...prev };
+      for (const s of servers) next[serverKey(s.ip, s.port)] = 'checking';
+      return next;
+    });
+    for (const s of servers) {
+      const key = serverKey(s.ip, s.port);
+      void probeServer(s).then((ok) => {
+        setStatuses((prev) => ({ ...prev, [key]: ok ? 'ok' : 'fail' }));
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'recent') probeAll(recent);
+  }, [tab, recent, probeAll]);
 
   useEffect(() => {
     if (tab === 'scan') scannedRef.current = false;
@@ -174,7 +200,15 @@ export default function ConnectScreen({ onConnected }: Props) {
   };
 
   const forget = async (info: ServerInfo) => {
-    setRecent(await forgetConnection(info));
+    const next = await forgetConnection(info);
+    setRecent(next);
+    setStatuses((prev) => {
+      const key = serverKey(info.ip, info.port);
+      if (!(key in prev)) return prev;
+      const rest = { ...prev };
+      delete rest[key];
+      return rest;
+    });
   };
 
   const renderScan = () => {
@@ -285,7 +319,7 @@ export default function ConnectScreen({ onConnected }: Props) {
     return (
       <FlatList
         data={recent}
-        keyExtractor={(item) => `${item.ip}:${item.port}`}
+        keyExtractor={(item) => serverKey(item.ip, item.port)}
         contentContainerStyle={styles.list}
         renderItem={({ item }) => (
           <View style={styles.row}>
@@ -295,6 +329,7 @@ export default function ConnectScreen({ onConnected }: Props) {
                 address={`${item.ip}:${item.port}`}
                 onPress={() => connect(item)}
                 disabled={busy}
+                status={statuses[serverKey(item.ip, item.port)]}
               />
             </View>
             <TouchableOpacity
@@ -404,11 +439,13 @@ function ServerRow({
   address,
   onPress,
   disabled,
+  status,
 }: {
   name: string;
   address: string;
   onPress: () => void;
   disabled?: boolean;
+  status?: ReachStatus;
 }) {
   const theme = useTheme();
   return (
@@ -426,10 +463,20 @@ function ServerRow({
           <Text style={[styles.serverName, { color: theme.text }]}>{name}</Text>
           <Text style={[styles.serverAddress, { color: theme.muted }]}>{address}</Text>
         </View>
+        {status && <StatusDot status={status} />}
         <Icon name="chevron-forward" size={20} color={theme.muted} />
       </Card>
     </TouchableOpacity>
   );
+}
+
+function StatusDot({ status }: { status: ReachStatus }) {
+  const theme = useTheme();
+  if (status === 'checking') {
+    return <ActivityIndicator size="small" color={theme.muted} style={styles.statusDot} />;
+  }
+  const color = status === 'ok' ? theme.ok : theme.danger;
+  return <View style={[styles.statusDot, { backgroundColor: color }]} />;
 }
 
 const styles = StyleSheet.create({
@@ -510,6 +557,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,140,255,0.10)',
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   serverName: {
     fontSize: 16,

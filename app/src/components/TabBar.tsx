@@ -85,7 +85,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm + 2,
     borderRadius: radius.md,
     minHeight: 40,
-    paddingHorizontal: spacing.xs,
+    paddingHorizontal: spacing.sm,
   },
   label: {
     fontSize: 14,

@@ -1,5 +1,5 @@
 import { type BarcodeScanningResult, CameraView, useCameraPermissions } from 'expo-camera';
-import { type ComponentProps, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -74,13 +74,6 @@ const TAB_LABELS: Record<Tab, string> = {
   discover: 'Discover',
   manual: 'Manual',
   recent: 'Recent',
-};
-
-const TAB_ICONS: Record<Tab, ComponentProps<typeof Icon>['name']> = {
-  scan: 'scan-outline',
-  discover: 'wifi-outline',
-  manual: 'create-outline',
-  recent: 'time-outline',
 };
 
 export default function ConnectScreen({ onConnected }: Props) {
@@ -393,7 +386,7 @@ export default function ConnectScreen({ onConnected }: Props) {
       <GradientHeader title="RemControl" subtitle="Connect a computer" icon={LOGO} />
       <TabBar
         style={styles.tabs}
-        tabs={tabs.map((t) => ({ key: t, label: TAB_LABELS[t], icon: TAB_ICONS[t] }))}
+        tabs={tabs.map((t) => ({ key: t, label: TAB_LABELS[t] }))}
         value={tab}
         onChange={(t) => {
           setTab(t);

@@ -44,3 +44,10 @@ commands locally before pushing — see the per-directory CLAUDE.md files.
 Pushing a `v*` tag triggers `.github/workflows/release.yml`: builds server
 binaries for Linux/macOS(Intel+ARM)/Windows and the Android APK, then drafts
 a GitHub Release (not auto-published — review and publish manually).
+
+## Specs
+
+Design specs live under `docs/superpowers/specs/`. When writing or reviewing
+one, follow the `spec-formatting` skill: prefer definition lists over tables
+when any cell holds a paragraph, align table pipes when you do use a table,
+and keep type signatures / wire formats / payloads in fenced code blocks.

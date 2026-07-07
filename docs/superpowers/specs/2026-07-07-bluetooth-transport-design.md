@@ -37,16 +37,40 @@ unavailable (campus/enterprise client isolation, no shared network, etc.).
 
 ## Decisions (locked during brainstorming)
 
-| Decision | Choice | Reasoning |
-|---|---|---|
-| Motivation | Always-on second transport | Coexists with WS; user picks per situation. |
-| Bluetooth tech | BLE GATT | Windows has no usable Classic SPP server; BLE GATT works on all three targets (Linux bluer, Windows WinRT, Android). Small MTU needs a framing layer, but GATT preserves in-characteristic order. |
-| Pairing | Reuse PSK token, no OS bond | Server-as-peripheral bonding is the worst-supported corner of every OS, especially Windows. Token already provides the trust the audit fixed (C-1). Abstraction leaves room for bonding later. |
-| UI surfacing | Layout toggle in Settings | One pref flips BLE discovery between a section inside Discover (on) and a separate Bluetooth tab (off). Same native surface behind both. |
-| Scope | Full cross-platform | Android client + Linux and Windows server in one design; implementation plan phases it. |
-| Reliability | Strict in-order now, lossy later | `recv() -> None` / `onClose` on any gap; framing extensible for a future drop policy. |
-| Architecture | Transport trait/interface, generic handler | Matches the existing `Injector` trait precedent; avoids the `handshake-wire-format-test-gap` duplication bug. |
-| Pairing flow over BLE | QR carries the token (no typing) | The QR already carries the token on the Wi-Fi path; the same payload gains a `transport` field and optional BLE identity so a scan connects over BLE friction-free. The token rides the QR exactly as on Wi-Fi, so no new security risk. Typing the 32-char token remains only as the no-QR fallback (BLE scan). |
+**Motivation — always-on second transport.**
+Coexists with WS; user picks per situation.
+
+**Bluetooth tech — BLE GATT.**
+Windows has no usable Classic SPP server; BLE GATT works on all three targets
+(Linux bluer, Windows WinRT, Android). Small MTU needs a framing layer, but
+GATT preserves in-characteristic order.
+
+**Pairing — reuse PSK token, no OS bond.**
+Server-as-peripheral bonding is the worst-supported corner of every OS,
+especially Windows. Token already provides the trust the audit fixed (C-1).
+Abstraction leaves room for bonding later.
+
+**UI surfacing — layout toggle in Settings.**
+One pref flips BLE discovery between a section inside Discover (on) and a
+separate Bluetooth tab (off). Same native surface behind both.
+
+**Scope — full cross-platform.**
+Android client + Linux and Windows server in one design; implementation plan
+phases it.
+
+**Reliability — strict in-order now, lossy later.**
+`recv() -> None` / `onClose` on any gap; framing extensible for a future drop
+policy.
+
+**Architecture — Transport trait/interface, generic handler.**
+Matches the existing `Injector` trait precedent; avoids the
+`handshake-wire-format-test-gap` duplication bug.
+
+**Pairing flow over BLE — QR carries the token (no typing).**
+The QR already carries the token on the Wi-Fi path; the same payload gains a
+`transport` field and optional BLE identity so a scan connects over BLE
+friction-free. The token rides the QR exactly as on Wi-Fi, so no new security
+risk. Typing the 32-char token remains only as the no-QR fallback (BLE scan).
 
 ## Architecture overview
 

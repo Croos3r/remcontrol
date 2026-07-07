@@ -40,7 +40,15 @@ pre-existing, not something to silently "fix" mid-release.
 
 4. **Sync version fields** to the new version: `server/Cargo.toml`
    (`version = "..."`), `app/package.json` (`version`), `app/app.json`
-   (`expo.version`). Commit as `chore(release): vX.Y.Z` if anything changed.
+   (`expo.version`). Then regenerate the server lockfile so it doesn't
+   stay pinned to the old version (this is what broke the v1.2.0 release
+   — the lockfile still referenced 1.1.0):
+   ```sh
+   (cd server && cargo update -p remcontrol-server)
+   ```
+   Verify before committing: `rg '^name = "remcontrol-server"' -A1
+   server/Cargo.lock` must show the new version. Commit as
+   `chore(release): vX.Y.Z` if anything changed.
 
 5. **Tag and push** — confirm with the user before this step, it's the
    trigger:

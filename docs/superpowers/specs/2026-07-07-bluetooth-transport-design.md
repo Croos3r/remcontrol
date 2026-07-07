@@ -89,6 +89,19 @@ explicitly accepts; no silent transport switch. Single-identity entries
 (mDNS/manual/BLE-scan) can't fail over — they fall back to the Connect
 screen.
 
+**Discovery prompting — lazy, no nag on entry.**
+Opening Discover starts only scans already possible; a disabled radio shows
+a passive empty state with a tap target, not a prompt. Enablement/permission
+is requested only on a user action that needs it. Keeps discovery from
+re-prompting every open.
+
+**macOS BLE — deferred, stub now.**
+Roughly 1-2 weeks of work dominated by Rust-binding maturity for
+CoreBluetooth's peripheral role and a run-loop↔tokio bridge. Keep a
+compiling stub now, protect the `Transport` trait boundary from Linux/WinRT
+isms, and add a real third `impl Transport` as a focused follow-up. WS
+still works on macOS in the meantime.
+
 ## Architecture overview
 
 A `Transport` boundary is introduced on both sides, between crypto/protocol
@@ -563,12 +576,56 @@ harder direction and the main native complexity.
   which is why BLE was chosen.
 - Platform gate: `#[cfg(target_os = "windows")]`.
 
-### macOS
+### macOS (deferred — stub now, real impl as future work)
 
 The release workflow builds macOS, but there's no CoreBluetooth GATT-server
-code in this design. A `#[cfg(target_os = "macos")]` stub keeps the crate
-building; Bluetooth on macOS is out of scope (WS still works). Documented as
-unsupported.
+code in this design. macOS BLE is explicitly **deferred** to a follow-up
+(see "Future platforms" in the project memory): roughly 1-2 weeks of work,
+dominated by Rust-binding maturity for `CBPeripheralManager` (`objc2`/`icrate`
+or raw `objc2` message-sends) and a run-loop↔tokio bridge. The abstraction is
+designed so macOS slots in as a third `impl Transport` without touching
+crypto, protocol, or framing.
+
+To keep that door open without doing the work now, the macOS stub has a
+concrete contract:
+
+- **Compiles on `x86_64-apple-darwin` and `aarch64-apple-darwin`** with no
+  CoreBluetooth calls. The `#[cfg(target_os = "macos")]` branch exposes a
+  `pub async fn run_ble_server(state: AppState) -> Result<(), Error>` that
+  logs "Bluetooth not supported on this build" and returns immediately (or
+  `pending().await`), so `main.rs`'s spawn compiles unchanged.
+- **`--no-ble` and `--qr-transport` behave the same**: with no BLE support,
+  the QR carries only the WS identity (as if `--no-ble` were always set on
+  macOS). The CLI flag parsing stays identical across platforms.
+- **WS still works on macOS** — the axum listener and mDNS are unchanged, so
+  a macOS build is fully functional over Wi-Fi. Only the second transport is
+  absent.
+
+### Trait-boundary contract (protects the macOS door)
+
+The `Transport` trait and the BLE framing layer must not assume Linux or
+WinRT-isms that a future CoreBluetooth impl would have to undo:
+
+- The framing layer (`kind|flags|length|payload`, fragmentation, reassembly)
+  is pure byte shuffling and already platform-agnostic — it must not take a
+  `bluer` or `windows` type. The native impl feeds it bytes and reads bytes
+  from it.
+- The `Transport` impl for BLE owns the GATT I/O (connect, write, notify,
+  MTU) and exposes only `send`/`recv`/`peer` to the handler. Nothing in the
+  connection handler or framing layer reaches into the native BLE stack.
+- Connection lifecycle (advertising start/stop, characteristic subscription)
+  is the native impl's responsibility, not the trait's. The trait has no
+  `advertise` / `power_on` method — those live in `run_ble_server` on each
+  platform, so a macOS `run_ble_server` can use a run loop without the trait
+  knowing.
+- `TransportPeer::Ble(BleIdentity)` carries an opaque identity that each
+  platform fills in its own way; the handler uses it only as a rate-limit key
+  and log label, never inspecting its fields. So macOS can use CoreBluetooth's
+  central identifier without the trait changing.
+
+If a future macOS impl can satisfy `Transport` and `run_ble_server` without
+the handler, framing, crypto, or protocol changing, the boundary is right.
+The self-review before committing the implementation should check this.
 
 ### Connection handler (transport-agnostic)
 

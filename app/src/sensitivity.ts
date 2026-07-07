@@ -1,7 +1,5 @@
-export const SENSITIVITIES = [
-  { label: 'Slow', value: 0.8 },
-  { label: 'Normal', value: 1.5 },
-  { label: 'Fast', value: 2.5 },
-] as const;
+export const MIN_SENSITIVITY = 0.5;
+export const MAX_SENSITIVITY = 5.0;
+export const SENSITIVITY_STEP = 0.1;
 
 export const DEFAULT_SENSITIVITY = 1.5;

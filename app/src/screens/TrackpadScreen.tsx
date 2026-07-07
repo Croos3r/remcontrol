@@ -20,11 +20,16 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Card } from '../components/Card';
-import { Chip } from '../components/Chip';
 import { Icon } from '../components/Icon';
 import { KeyPanel, type ModifierKey } from '../components/KeyPanel';
+import { Slider } from '../components/Slider';
 import type { Connection } from '../connection';
-import { DEFAULT_SENSITIVITY, SENSITIVITIES } from '../sensitivity';
+import {
+  DEFAULT_SENSITIVITY,
+  MAX_SENSITIVITY,
+  MIN_SENSITIVITY,
+  SENSITIVITY_STEP,
+} from '../sensitivity';
 import { radius, spacing, useTheme } from '../theme';
 import { INITIAL_TOP_BAR_STATE, reduceTopBar } from '../topBarVisibility';
 
@@ -457,15 +462,20 @@ export default function TrackpadScreen({ connection, onDisconnect, initialSensit
             </Card>
             {topBarState.settingsOpen && (
               <Card style={styles.settingsCard} padded={false}>
-                <Text style={[styles.settingsLabel, { color: theme.muted }]}>Speed</Text>
-                {SENSITIVITIES.map((s) => (
-                  <Chip
-                    key={s.label}
-                    label={s.label}
-                    active={sensitivity === s.value}
-                    onPress={() => setSensitivity(s.value)}
-                  />
-                ))}
+                <View style={styles.settingsRow}>
+                  <Text style={[styles.settingsLabel, { color: theme.muted }]}>Speed</Text>
+                  <Text style={[styles.settingsValue, { color: theme.text }]}>
+                    {sensitivity.toFixed(1)}x
+                  </Text>
+                </View>
+                <Slider
+                  accessibilityLabel="Pointer speed"
+                  value={sensitivity}
+                  min={MIN_SENSITIVITY}
+                  max={MAX_SENSITIVITY}
+                  step={SENSITIVITY_STEP}
+                  onValueChange={setSensitivity}
+                />
               </Card>
             )}
           </Animated.View>
@@ -649,18 +659,25 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   settingsCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     marginTop: spacing.sm,
     borderRadius: radius.lg,
   },
+  settingsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  settingsValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
   settingsLabel: {
     fontSize: 14,
     fontWeight: '600',
-    marginRight: spacing.xs,
   },
   pad: {
     flex: 1,

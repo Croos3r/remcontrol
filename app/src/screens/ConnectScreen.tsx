@@ -15,14 +15,14 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '../components/Buttons';
 import { Card } from '../components/Card';
-import { Chip } from '../components/Chip';
 import { GradientHeader } from '../components/GradientHeader';
 import { Icon } from '../components/Icon';
+import { Slider } from '../components/Slider';
 import { TabBar } from '../components/TabBar';
 import { Connection } from '../connection';
 import { DEFAULT_PREFS, loadPrefs, type Prefs, savePrefs } from '../prefs';
 import { probeServer } from '../probe';
-import { SENSITIVITIES } from '../sensitivity';
+import { MAX_SENSITIVITY, MIN_SENSITIVITY, SENSITIVITY_STEP } from '../sensitivity';
 import { forgetConnection, loadRecentConnections, saveConnection } from '../storage';
 import { radius, spacing, useTheme } from '../theme';
 import type { ServerInfo } from '../types';
@@ -118,15 +118,15 @@ export default function ConnectScreen({ onConnected, onPrefsChange }: Props) {
   }, []);
 
   const updatePrefs = useCallback(
-    (patch: Partial<Prefs>) => {
+    (patch: Partial<Prefs>, persist = true) => {
       setPrefs((prev) => {
         const next = { ...prev, ...patch };
-        void savePrefs(next);
-        onPrefsChange?.(next);
+        if (persist) void savePrefs(next);
         return next;
       });
+      if (persist && onPrefsChange) onPrefsChange({ ...prefs, ...patch });
     },
-    [onPrefsChange],
+    [onPrefsChange, prefs],
   );
 
   const probeAll = useCallback((servers: ServerInfo[]) => {
@@ -405,20 +405,28 @@ export default function ConnectScreen({ onConnected, onPrefsChange }: Props) {
   const renderSettings = () => (
     <View style={styles.form}>
       <Card style={styles.settingsCard}>
-        <Text style={[styles.settingsTitle, { color: theme.text }]}>Default trackpad speed</Text>
-        <Text style={[styles.settingsHint, { color: theme.muted }]}>
-          Used when opening the trackpad.
-        </Text>
-        <View style={styles.chipRow}>
-          {SENSITIVITIES.map((s) => (
-            <Chip
-              key={s.label}
-              label={s.label}
-              active={prefs.defaultSensitivity === s.value}
-              onPress={() => updatePrefs({ defaultSensitivity: s.value })}
-            />
-          ))}
+        <View style={styles.settingsRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.settingsTitle, { color: theme.text }]}>
+              Default trackpad speed
+            </Text>
+            <Text style={[styles.settingsHint, { color: theme.muted }]}>
+              Used when opening the trackpad.
+            </Text>
+          </View>
+          <Text style={[styles.settingsValue, { color: theme.text }]}>
+            {prefs.defaultSensitivity.toFixed(1)}x
+          </Text>
         </View>
+        <Slider
+          accessibilityLabel="Default trackpad speed"
+          value={prefs.defaultSensitivity}
+          min={MIN_SENSITIVITY}
+          max={MAX_SENSITIVITY}
+          step={SENSITIVITY_STEP}
+          onValueChange={(v) => updatePrefs({ defaultSensitivity: v }, false)}
+          onSlidingComplete={(v) => updatePrefs({ defaultSensitivity: v }, true)}
+        />
       </Card>
 
       <Card style={styles.settingsCard}>
@@ -595,6 +603,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
   },
+  settingsValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
   settingsTitle: {
     fontSize: 16,
     fontWeight: '700',
@@ -602,12 +615,6 @@ const styles = StyleSheet.create({
   settingsHint: {
     fontSize: 13,
     marginTop: 2,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
   },
   input: {
     paddingHorizontal: spacing.lg,

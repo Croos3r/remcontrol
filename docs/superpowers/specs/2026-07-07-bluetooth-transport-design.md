@@ -81,6 +81,14 @@ BLE ships with JSON too, and a binary tag-byte encoding is a targeted
 optimization only if GATT measurements show fragmentation hurting. A protocol
 version byte in the handshake (audit M-3) keeps that door open.
 
+**Transport failure — prompted failover, not automatic.**
+When the active transport's radio drops and reconnect is about to give up,
+the banner offers "Switch to Bluetooth/Wi-Fi?" if the stored entry links
+both identities (dual-identity QR) and the other radio is up. The user
+explicitly accepts; no silent transport switch. Single-identity entries
+(mDNS/manual/BLE-scan) can't fail over — they fall back to the Connect
+screen.
+
 ## Architecture overview
 
 A `Transport` boundary is introduced on both sides, between crypto/protocol
@@ -360,60 +368,155 @@ the rendering component differs.
 
 ### `ServerInfo` extension
 
-Today `{ip, port, token, name?}`. BLE entries have no `ip`/`port`. The type
-becomes a discriminated union:
+Today `{ip, port, token, name?}`. The type becomes a discriminated union
+that also supports a **linked** form carrying both transport identities for
+one PC, so prompted failover (see "Transport availability and failover")
+can find the other transport without a separate lookup:
 
 ```ts
 type ServerInfo =
   | { transport: "ws"; ip: string; port: number; token: string; name?: string }
-  | { transport: "ble"; deviceId: string; token: string; name?: string };
+  | { transport: "ble"; deviceId: string; token: string; name?: string }
+  | {
+      transport: "ws";        // active transport
+      ip: string; port: number; token: string; name?: string;
+      ble: { deviceId: string; name?: string };   // known BLE identity for same PC
+    }
+  | {
+      transport: "ble";       // active transport
+      deviceId: string; token: string; name?: string;
+      ws: { ip: string; port: number; name?: string };   // known WS identity
+    };
 ```
 
+The linked form comes from a **QR scan that carries both identities** (see
+"QR payload"): a single QR can encode `{ip, port, bleName, token}` so the
+phone knows both ways to reach that PC. The `token` is shared across both
+transports (same PSK), so the linked form stores it once.
+
 Storage helpers (`tokenKey`, `sameServer`, `serverKey` in `storage.ts`)
-extend to handle the BLE variant keyed by `deviceId`. `Connection` is
-constructed with the matching transport: WS path builds `WsTransport`
-(wrapping the existing `WebSocketLike`), BLE path builds `BleTransport`.
+extend to handle the BLE variant keyed by `deviceId`, and the linked form
+keyed by the active transport's identity. `Connection` is constructed with
+the active transport: WS path builds `WsTransport` (wrapping the existing
+`WebSocketLike`), BLE path builds `BleTransport`.
+
+Single-identity entries (mDNS/manual → WS only; BLE scan → BLE only) cannot
+fail over to the unknown transport — the prompt only offers the direction
+whose identity is known. That is an honest, documented limitation.
 The QR path produces either variant (see "QR payload" below); the bare BLE
 scan path produces `transport: "ble"` with a token typed as the fallback.
 
 ### QR payload
 
 The server's pairing payload (today `{v, ip, port, token, name}` in
-`server/src/lib.rs::pairing_payload`) gains a `transport` field and an
-optional BLE identity. Scanning it is the primary, friction-free flow for
-both transports — the token rides the QR, no typing, exactly as on the
-Wi-Fi path today. The server prints one QR; the phone picks the transport
-the QR indicates:
+`server/src/lib.rs::pairing_payload`) gains fields for transport and the
+BLE identity. Scanning it is the primary, friction-free flow — the token
+rides the QR, no typing, exactly as on the Wi-Fi path today. The default QR
+carries **both** identities so a single scan lets the phone reach the PC
+either way (and enables prompted failover):
 
 ```json
 {
   "v": 1,
-  "transport": "ws" | "ble",
-  "ip": "192.168.1.10",     // present when transport = "ws"
-  "port": 17890,            // present when transport = "ws"
-  "bleName": "dorian-pc",   // present when transport = "ble"; advertised name
+  "ip": "192.168.1.10",     // WS identity (absent if --no-wifi / no LAN)
+  "port": 17890,            // WS identity
+  "bleName": "dorian-pc",   // BLE identity (absent if --no-ble)
   "token": "...",
   "name": "dorian-pc"
 }
 ```
 
-The server advertises both itself over mDNS/LAN and the `remcontrol` GATT
-service over BLE, and chooses which transport the QR points at based on a
-config/CLI preference (default `ws`; `--qr-transport ble` for the no-LAN
-case). A future single-QR-covers-both format is possible (the phone scans
-once and tries the transport it can reach) but is left to the implementation
-plan; v1 of this feature picks one transport per QR.
+When both `ip:port` and `bleName` are present, the phone stores a **linked**
+`ServerInfo` (see "`ServerInfo` extension") with both identities and the
+token, active transport defaulting to WS. When only one is present
+(`--no-ble` or no-LAN), the phone stores the single-identity form for that
+transport. `--qr-transport ws|ble` selects which transport the QR's active
+field points at, for the case where the user wants a specific transport to
+be the default; the other identity, if advertised, is still included for
+failover.
+
+The server advertises itself over mDNS/LAN and the `remcontrol` GATT
+service over BLE regardless of what the QR carries; the QR fields only
+reflect which transports the server is running (`--no-ble` / `--no-wifi`
+strip the corresponding identity).
 
 The phone's QR scan (in `ConnectScreen`'s `onBarcode` handler) already
 `JSON.parse`s the payload and validates the known fields; it gains handling
-for `transport` and produces the matching `ServerInfo` variant. The token
-comes from the QR in both cases.
+for `bleName` and produces the matching `ServerInfo` variant (linked or
+single). The token comes from the QR in all cases.
 
 ### `probe.ts`
 
 The reachability probe currently opens a throwaway WS. It gains a BLE
 variant: a cheap GATT service-presence check (scan for the device's
 advertised service, no full connect) for `transport: "ble"` recent entries.
+For a linked `ServerInfo`, it probes the active transport only (the other
+identity is probed on demand if the user accepts a failover prompt).
+
+### Transport availability and failover
+
+The two transports are independently available, so the app handles every
+radio combination:
+
+**Discovery (Connect screen).** Each section surfaces its own availability,
+independently. mDNS needs Wi-Fi + `CHANGE_WIFI_MULTICAST_STATE`; it fails
+silently on mobile data and on Wi-Fi with client isolation. BLE scan needs
+the Bluetooth radio + runtime permissions; it works with or without Wi-Fi
+and is unaffected by LAN isolation. Each section shows an empty-state
+message ("Bluetooth off", "Not on Wi-Fi", "Permission denied") rather than
+a silent blank list. Mobile data is irrelevant to remcontrol (the server is
+LAN-only, never internet-routable); being on cellular just means mDNS
+doesn't work, which is the same as "no Wi-Fi" for discovery.
+
+Discovery matrix:
+
+| Wi-Fi | Bluetooth | mDNS section | BLE section | Working paths |
+|---|---|---|---|---|
+| on, LAN | on | populated | populated | both |
+| on, LAN | off | populated | empty + msg | Wi-Fi (QR / manual / mDNS) |
+| on, mobile data | on | empty (no multicast) | populated | BLE (QR / manual / scan) |
+| on, mobile data | off | empty | empty | QR / manual only |
+| off | on | empty | populated | BLE (QR / manual / scan) |
+| off | off | empty | empty | QR / manual only (no discovery) |
+
+QR scan and manual entry don't depend on either radio for *discovery* — they
+need only the transport they point at to be up at *connect* time.
+
+**Pre-connect availability check.** Before attempting a connection, the app
+checks the active transport's radio state. Tapping a `transport: "ble"`
+recent entry with Bluetooth off surfaces "Turn on Bluetooth to use this
+connection" instead of silently failing. Same for Wi-Fi: a `transport: "ws"`
+entry with Wi-Fi off surfaces "Turn on Wi-Fi" / "Not on a network" rather
+than a connection-timeout. This is per-transport and cheap (radio state, not
+a network probe).
+
+**Active session and reconnect.** If the active transport's radio drops
+mid-session, `recv() -> None` / `onClose` fires and the reconnect loop
+starts with backoff, same as today. The loop reconnects over the *same*
+transport (a stored `transport: "ws"` entry reconnects over WS). If the
+radio stays down, the loop exhausts retries and shows a reconnect banner —
+and this is where prompted failover kicks in.
+
+**Prompted failover (v1).** When the reconnect loop is about to give up, if
+the stored `ServerInfo` is a **linked** form (both identities known, from a
+dual-identity QR scan) and the *other* transport's radio is up, the reconnect
+banner offers: "Switch to Bluetooth?" / "Switch to Wi-Fi?". Tapping it
+constructs a `Connection` over the other transport using the linked identity
+and the shared token, without leaving the trackpad screen. The original
+transport keeps retrying in the background until the switch succeeds; on
+success, the active transport in the stored `ServerInfo` flips to the new
+one.
+
+Failover is **prompted, not automatic** — the user explicitly accepts the
+switch. This avoids silent transport changes and the magic of guessing
+"same PC," while still keeping the user unblocked when one radio dies.
+
+**Limitation (documented).** Single-identity entries (mDNS/manual → WS
+only; BLE scan → BLE only) have no linked other transport, so no failover
+prompt is offered — the user falls back to the Connect screen to pick the
+other transport manually. Only QR-paired PCs (both identities) get the
+prompt. This is honest: the linking comes from the QR carrying both
+identities, which mDNS/manual/BLE-scan don't.
 
 ## Server side (Linux + Windows, BLE peripheral)
 
@@ -472,15 +575,18 @@ and the connection is proximity-bound.
 ### `main.rs` launch
 
 Keeps the axum TCP listener and adds a second `tokio::spawn` running the BLE
-GATT server's accept loop. Both share `AppState`. Two new CLI flags (same
+GATT server's accept loop. Both share `AppState`. New CLI flags (same
 hand-rolled style as `--no-mdns`/`--bind-addr`):
 
 - `--no-ble` disables BLE advertising, for environments where it's unwanted.
-- `--qr-transport ws|ble` selects which transport the printed QR points at
-  (default `ws`; `ble` for the no-LAN case). See "QR payload".
+- `--no-wifi` disables the WS listener (and mDNS), for the no-LAN case where
+  only BLE should run. The QR then carries only the BLE identity.
+- `--qr-transport ws|ble` selects which transport the QR's active field
+  points at (default `ws`; `ble` for the no-LAN case). See "QR payload".
 
 The server advertises itself over mDNS/LAN and the GATT service over BLE
-regardless of which the QR points at; the flag only affects the QR.
+for whichever transports aren't disabled; the QR carries identities only
+for the transports the server is running.
 
 ## Error handling, edge cases, testing
 
@@ -496,7 +602,17 @@ regardless of which the QR points at; the flag only affects the QR.
   (e.g. 23-byte default ATT MTU leaves ~17 bytes payload after framing), the
   transport refuses to connect and surfaces an error.
 - **BLE off / permission denied:** scan surfaces unavailable (matching
-  `setZeroconfAvailable(false)`), UI shows the fallback message.
+  `setZeroconfAvailable(false)`); the BLE section shows "Bluetooth off" /
+  "Permission denied" instead of a blank list. A pre-connect availability
+  check stops a `transport: "ble"` connect attempt with "Turn on Bluetooth"
+  rather than a silent timeout. Same for `transport: "ws"` with Wi-Fi off
+  ("Turn on Wi-Fi" / "Not on a network").
+- **Active transport's radio drops:** `recv() -> None` / `onClose` fires,
+  reconnect loop retries over the same transport with backoff. If the
+  stored `ServerInfo` is linked (both identities known) and the other
+  transport's radio is up, the reconnect banner offers prompted failover
+  (see "Transport availability and failover"). Otherwise the loop exhausts
+  retries and returns to the Connect screen.
 - **Token wrong over BLE:** identical to WS — `authenticate` fails, server
   sends a plaintext error via Notify, closes the GATT connection, app fires
   `onAuthFailure` and stops reconnecting (fixes the audit's M-5 for both

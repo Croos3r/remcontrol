@@ -346,8 +346,13 @@ availability (Bluetooth off / permission denied) the way `zeroconf` surfaces
 A layout pref (`showBluetoothInDiscover: boolean`, persisted via the existing
 prefs module) toggles between:
 
-- **On:** Discover screen renders two sections — the existing mDNS section
-  and a new BLE section consuming `bleScan`. Each row tagged with transport.
+- **On:** the Discover screen renders two clearly separated sections, each
+  with its own header — the existing mDNS section ("On this network") and a
+  new BLE section ("Nearby / Bluetooth") consuming `bleScan`. The section
+  header is the transport indicator; rows do not carry a per-row Wi-Fi /
+  Bluetooth icon. The two sections are visually distinct (a divider or
+  labeled header between them) so it's obvious which list you're picking
+  from.
 - **Off:** a separate `BluetoothTab` renders the BLE scan results.
 
 Both modes consume the same `bleScan` API and the same `BleTransport`; only

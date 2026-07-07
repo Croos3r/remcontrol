@@ -2,9 +2,11 @@ import { type BarcodeScanningResult, CameraView, useCameraPermissions } from 'ex
 import { type ComponentProps, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Dimensions,
   FlatList,
   Platform,
+  RefreshControl,
   StyleSheet,
   Switch,
   Text,
@@ -91,6 +93,8 @@ const TAB_ICONS: Record<Tab, ComponentProps<typeof Icon>['name']> = {
   settings: 'settings-outline',
 };
 
+const REFRESH_PROBE_TIMEOUT_MS = 1500;
+
 export default function ConnectScreen({ onConnected, onPrefsChange }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -107,6 +111,8 @@ export default function ConnectScreen({ onConnected, onPrefsChange }: Props) {
 
   const [recent, setRecent] = useState<ServerInfo[]>([]);
   const [statuses, setStatuses] = useState<Record<string, ReachStatus>>({});
+  const [refreshing, setRefreshing] = useState(false);
+  const probingCountRef = useRef(0);
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [ip, setIp] = useState('');
   const [port, setPort] = useState('17890');
@@ -129,22 +135,46 @@ export default function ConnectScreen({ onConnected, onPrefsChange }: Props) {
     [onPrefsChange, prefs],
   );
 
-  const probeAll = useCallback((servers: ServerInfo[]) => {
+  const probeAll = useCallback((servers: ServerInfo[], timeoutMs?: number): Promise<void> => {
+    if (servers.length === 0) return Promise.resolve();
+    probingCountRef.current += 1;
     setStatuses((prev) => {
       const next = { ...prev };
       for (const s of servers) next[serverKey(s.ip, s.port)] = 'checking';
       return next;
     });
-    for (const s of servers) {
+    const tasks = servers.map((s) => {
       const key = serverKey(s.ip, s.port);
-      void probeServer(s).then((ok) => {
+      return probeServer(s, timeoutMs ? { timeoutMs } : {}).then((ok) => {
         setStatuses((prev) => ({ ...prev, [key]: ok ? 'ok' : 'fail' }));
       });
-    }
+    });
+    return Promise.all(tasks).then(() => {
+      probingCountRef.current -= 1;
+    });
   }, []);
 
   useEffect(() => {
     if (tab === 'recent') probeAll(recent);
+  }, [tab, recent, probeAll]);
+
+  useEffect(() => {
+    if (tab !== 'recent') return;
+    const sec = prefs.recentRefreshIntervalSec;
+    if (!sec) return;
+    const id = setInterval(() => {
+      if (probingCountRef.current > 0) return;
+      void probeAll(recent, REFRESH_PROBE_TIMEOUT_MS);
+    }, sec * 1000);
+    return () => clearInterval(id);
+  }, [tab, prefs.recentRefreshIntervalSec, recent, probeAll]);
+
+  useEffect(() => {
+    if (tab !== 'recent') return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void probeAll(recent);
+    });
+    return () => sub.remove();
   }, [tab, recent, probeAll]);
 
   useEffect(() => {
@@ -232,6 +262,11 @@ export default function ConnectScreen({ onConnected, onPrefsChange }: Props) {
       return rest;
     });
   };
+
+  const refresh = useCallback(() => {
+    setRefreshing(true);
+    void probeAll(recent).then(() => setRefreshing(false));
+  }, [probeAll, recent]);
 
   const renderScan = () => {
     if (!permission?.granted) {
@@ -343,6 +378,14 @@ export default function ConnectScreen({ onConnected, onPrefsChange }: Props) {
         data={recent}
         keyExtractor={(item) => serverKey(item.ip, item.port)}
         contentContainerStyle={styles.list}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refresh}
+            colors={[theme.primary]}
+            tintColor={theme.primary}
+          />
+        }
         renderItem={({ item }) => (
           <View style={styles.row}>
             <View style={{ flex: 1 }}>
@@ -444,6 +487,34 @@ export default function ConnectScreen({ onConnected, onPrefsChange }: Props) {
             thumbColor={Platform.OS === 'android' ? theme.surface : undefined}
           />
         </View>
+      </Card>
+
+      <Card style={styles.settingsCard}>
+        <View style={styles.settingsRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.settingsTitle, { color: theme.text }]}>Recent auto-refresh</Text>
+            <Text style={[styles.settingsHint, { color: theme.muted }]}>
+              Re-probe saved servers while on the Recent tab.
+            </Text>
+          </View>
+          <Text style={[styles.settingsValue, { color: theme.text }]}>
+            {prefs.recentRefreshIntervalSec === 0 ? 'Off' : `${prefs.recentRefreshIntervalSec}s`}
+          </Text>
+        </View>
+        <Slider
+          accessibilityLabel="Recent auto-refresh interval"
+          accessibilityValueText={
+            prefs.recentRefreshIntervalSec === 0
+              ? 'Off'
+              : `${prefs.recentRefreshIntervalSec} seconds`
+          }
+          value={prefs.recentRefreshIntervalSec}
+          min={0}
+          max={60}
+          step={5}
+          onValueChange={(v) => updatePrefs({ recentRefreshIntervalSec: v }, false)}
+          onSlidingComplete={(v) => updatePrefs({ recentRefreshIntervalSec: v }, true)}
+        />
       </Card>
     </View>
   );

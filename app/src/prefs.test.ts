@@ -29,7 +29,7 @@ describe('loadPrefs / savePrefs', () => {
   });
 
   it('round-trips a full prefs object', async () => {
-    const custom = { defaultSensitivity: 2.5, autoReconnect: false };
+    const custom = { defaultSensitivity: 2.5, autoReconnect: false, recentRefreshIntervalSec: 30 };
     await savePrefs(custom);
     expect(await loadPrefs()).toEqual(custom);
   });
@@ -49,10 +49,18 @@ describe('loadPrefs / savePrefs', () => {
     const p = await loadPrefs();
     expect(p.defaultSensitivity).toBe(DEFAULT_PREFS.defaultSensitivity);
     expect(p.autoReconnect).toBe(false);
+    expect(p.recentRefreshIntervalSec).toBe(DEFAULT_PREFS.recentRefreshIntervalSec);
   });
 
   it('ignores fields of the wrong type', async () => {
-    store.set('remcontrol:prefs', JSON.stringify({ defaultSensitivity: 'fast', autoReconnect: 1 }));
+    store.set(
+      'remcontrol:prefs',
+      JSON.stringify({
+        defaultSensitivity: 'fast',
+        autoReconnect: 1,
+        recentRefreshIntervalSec: 'off',
+      }),
+    );
     expect(await loadPrefs()).toEqual(DEFAULT_PREFS);
   });
 });

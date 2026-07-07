@@ -7,11 +7,14 @@ export interface Prefs {
   defaultSensitivity: number;
   /** On launch, silently reconnect to the last successful server. */
   autoReconnect: boolean;
+  /** Seconds between reachability re-probes on the Recent tab. 0 disables. */
+  recentRefreshIntervalSec: number;
 }
 
 export const DEFAULT_PREFS: Prefs = {
   defaultSensitivity: 1.5,
   autoReconnect: true,
+  recentRefreshIntervalSec: 10,
 };
 
 export async function loadPrefs(): Promise<Prefs> {
@@ -32,6 +35,10 @@ export async function loadPrefs(): Promise<Prefs> {
         : DEFAULT_PREFS.defaultSensitivity,
     autoReconnect:
       typeof p.autoReconnect === 'boolean' ? p.autoReconnect : DEFAULT_PREFS.autoReconnect,
+    recentRefreshIntervalSec:
+      typeof p.recentRefreshIntervalSec === 'number'
+        ? p.recentRefreshIntervalSec
+        : DEFAULT_PREFS.recentRefreshIntervalSec,
   };
 }
 

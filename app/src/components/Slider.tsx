@@ -19,6 +19,7 @@ interface Props {
   max: number;
   step?: number;
   accessibilityLabel?: string;
+  accessibilityValueText?: string;
   onValueChange?: (v: number) => void;
   onSlidingComplete?: (v: number) => void;
 }
@@ -29,6 +30,7 @@ export function Slider({
   max,
   step = 0.1,
   accessibilityLabel = 'Slider',
+  accessibilityValueText,
   onValueChange,
   onSlidingComplete,
 }: Props) {
@@ -109,13 +111,15 @@ export function Slider({
     ],
   }));
 
+  const a11yValueText = accessibilityValueText ?? `${steppedJS(value, min, max, step).toFixed(1)}x`;
+
   return (
     <GestureDetector gesture={gesture}>
       <Animated.View
         style={styles.touch}
         accessibilityRole="adjustable"
         accessibilityLabel={accessibilityLabel}
-        accessibilityValue={{ text: `${steppedJS(value, min, max, step).toFixed(1)}x` }}
+        accessibilityValue={{ text: a11yValueText }}
         accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
         onAccessibilityAction={(e) => {
           const dir = e.nativeEvent.actionName === 'increment' ? 1 : -1;

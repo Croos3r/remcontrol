@@ -37,6 +37,9 @@ interface Props {
   connection: Connection;
   onDisconnect: () => void;
   initialSensitivity?: number;
+  initialFabPosition?: { x: number; y: number } | null;
+  floatingKeyboard?: boolean;
+  onFabPositionChange?: (pos: { x: number; y: number }) => void;
 }
 
 type Status = 'connected' | 'reconnecting' | 'reauth';
@@ -47,17 +50,28 @@ const DRAWER_HIDE_CLEARANCE = 16;
 const DOUBLE_TAP_DRAG_WINDOW_MS = 300;
 const RECONNECT_DELAYS_MS = [1000, 2000, 4000, 8000, 16000];
 const KEYBOARD_SENTINEL = ' ';
+const FAB_SIZE = 52;
+const FAB_DRAG_THRESHOLD = 8;
 
-export default function TrackpadScreen({ connection, onDisconnect, initialSensitivity }: Props) {
+export default function TrackpadScreen({
+  connection,
+  onDisconnect,
+  initialSensitivity,
+  initialFabPosition,
+  floatingKeyboard = true,
+  onFabPositionChange,
+}: Props) {
   const theme = useTheme();
   const [status, setStatus] = useState<Status>('connected');
   const [sensitivity, setSensitivity] = useState<number>(initialSensitivity ?? DEFAULT_SENSITIVITY);
   const [topBarState, dispatchTopBar] = useReducer(reduceTopBar, INITIAL_TOP_BAR_STATE);
-  const [keyboardMode, setKeyboardMode] = useState<'off' | 'float'>('off');
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [keysPanelOpen, setKeysPanelOpen] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [inputValue, setInputValue] = useState(KEYBOARD_SENTINEL);
   const [heldMods, setHeldMods] = useState<Set<ModifierKey>>(new Set());
   const [trayPos, setTrayPos] = useState<{ x: number; y: number } | null>(null);
+  const [fabPos, setFabPos] = useState<{ x: number; y: number } | null>(initialFabPosition ?? null);
 
   const insets = useSafeAreaInsets();
   const window = useWindowDimensions();
@@ -161,6 +175,7 @@ export default function TrackpadScreen({ connection, onDisconnect, initialSensit
     };
     const onHide = () => {
       setKeyboardHeight(0);
+      setKeyboardOpen(false);
       inputRef.current?.blur();
     };
     const showSub = Keyboard.addListener(showEvent, onShow as never);
@@ -289,21 +304,27 @@ export default function TrackpadScreen({ connection, onDisconnect, initialSensit
 
   const drawerGesture = Gesture.Exclusive(drawerPan, drawerTap);
 
-  const closeKeyboard = () => {
-    inputRef.current?.blur();
-    setKeyboardMode('off');
-    setTrayPos(null);
+  const toggleKeyboard = () => {
+    setKeyboardOpen((prev) => {
+      if (!prev) {
+        inputRef.current?.focus();
+        return true;
+      }
+      inputRef.current?.blur();
+      return false;
+    });
   };
 
-  const toggleKeyboard = () => {
-    setKeyboardMode((prev) => {
-      if (prev === 'off') {
-        inputRef.current?.focus();
-        return 'float';
-      }
-      closeKeyboard();
-      return 'off';
+  const toggleKeysPanel = () => {
+    setKeysPanelOpen((prev) => {
+      if (prev) setTrayPos(null);
+      return !prev;
     });
+  };
+
+  const closeKeysPanel = () => {
+    setKeysPanelOpen(false);
+    setTrayPos(null);
   };
 
   const onChangeText = (text: string) => {
@@ -381,6 +402,44 @@ export default function TrackpadScreen({ connection, onDisconnect, initialSensit
     y: window.height - trayH - 16 - keyboardHeight - insets.bottom,
   };
 
+  const clampFabPos = (pos: { x: number; y: number }) => ({
+    x: Math.max(spacing.sm, Math.min(window.width - FAB_SIZE - spacing.sm, pos.x)),
+    y: Math.max(
+      insets.top + spacing.lg,
+      Math.min(window.height - FAB_SIZE - keyboardHeight - insets.bottom - spacing.sm, pos.y),
+    ),
+  });
+
+  const fabPan = Gesture.Pan()
+    .runOnJS(true)
+    .blocksExternalGesture(gesture as never)
+    .activeOffsetX([-FAB_DRAG_THRESHOLD, FAB_DRAG_THRESHOLD])
+    .activeOffsetY([-FAB_DRAG_THRESHOLD, FAB_DRAG_THRESHOLD])
+    .onUpdate((e) => {
+      setFabPos(clampFabPos({ x: e.absoluteX - FAB_SIZE / 2, y: e.absoluteY - FAB_SIZE / 2 }));
+    })
+    .onEnd((e) => {
+      const pos = clampFabPos({ x: e.absoluteX - FAB_SIZE / 2, y: e.absoluteY - FAB_SIZE / 2 });
+      setFabPos(pos);
+      onFabPositionChange?.(pos);
+    });
+
+  const fabTap = Gesture.Tap()
+    .maxDuration(250)
+    .runOnJS(true)
+    .onEnd((_e, success) => {
+      if (success) toggleKeyboard();
+    });
+
+  const fabGesture = Gesture.Exclusive(fabPan, fabTap);
+
+  const resolvedFabPos = fabPos
+    ? clampFabPos(fabPos)
+    : {
+        x: window.width - FAB_SIZE - spacing.lg,
+        y: window.height - FAB_SIZE - spacing.lg - keyboardHeight - insets.bottom,
+      };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.appBg }]}>
       {status === 'reconnecting' && (
@@ -438,11 +497,20 @@ export default function TrackpadScreen({ connection, onDisconnect, initialSensit
               style={[styles.controlCluster, { backgroundColor: theme.surface }]}
               padded={false}
             >
+              {!floatingKeyboard && (
+                <ControlButton
+                  icon="keypad-outline"
+                  label="Keyboard"
+                  active={keyboardOpen}
+                  onPress={toggleKeyboard}
+                  themeColor={theme.primary}
+                />
+              )}
               <ControlButton
-                icon="keypad-outline"
-                label="Keyboard"
-                active={keyboardMode !== 'off'}
-                onPress={toggleKeyboard}
+                icon="apps-outline"
+                label="Special keys"
+                active={keysPanelOpen}
+                onPress={toggleKeysPanel}
                 themeColor={theme.primary}
               />
               <ControlButton
@@ -514,7 +582,7 @@ export default function TrackpadScreen({ connection, onDisconnect, initialSensit
         submitBehavior="submit"
       />
 
-      {keyboardMode === 'float' && (
+      {keysPanelOpen && (
         <View
           style={[
             styles.tray,
@@ -532,10 +600,10 @@ export default function TrackpadScreen({ connection, onDisconnect, initialSensit
               <Icon name="reorder-three-outline" size={20} color={theme.muted} />
               <TouchableOpacity
                 style={styles.trayClose}
-                onPress={closeKeyboard}
+                onPress={closeKeysPanel}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 accessibilityRole="button"
-                accessibilityLabel="Hide keyboard tray"
+                accessibilityLabel="Hide special keys tray"
               >
                 <Icon name="close" size={16} color={theme.muted} />
               </TouchableOpacity>
@@ -550,6 +618,34 @@ export default function TrackpadScreen({ connection, onDisconnect, initialSensit
             }}
           />
         </View>
+      )}
+
+      {floatingKeyboard && (
+        <GestureDetector gesture={fabGesture}>
+          <View
+            style={[
+              styles.fab,
+              theme.shadow,
+              {
+                left: resolvedFabPos.x,
+                top: resolvedFabPos.y,
+                width: FAB_SIZE,
+                height: FAB_SIZE,
+                backgroundColor: keyboardOpen ? theme.primary : theme.surface,
+                borderColor: keyboardOpen ? theme.primary : theme.border,
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={keyboardOpen ? 'Hide keyboard' : 'Show keyboard'}
+            accessibilityState={{ selected: keyboardOpen }}
+          >
+            <Icon
+              name={keyboardOpen ? 'chevron-down' : 'keypad-outline'}
+              size={22}
+              color={keyboardOpen ? theme.onGradient : theme.primary}
+            />
+          </View>
+        </GestureDetector>
       )}
     </View>
   );
@@ -720,6 +816,14 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     padding: spacing.xs,
+  },
+  fab: {
+    position: 'absolute',
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 15,
   },
   body: {
     flex: 1,

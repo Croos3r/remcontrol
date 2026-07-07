@@ -492,6 +492,25 @@ export default function ConnectScreen({ onConnected, onPrefsChange }: Props) {
       <Card style={styles.settingsCard}>
         <View style={styles.settingsRow}>
           <View style={{ flex: 1 }}>
+            <Text style={[styles.settingsTitle, { color: theme.text }]}>
+              Floating keyboard button
+            </Text>
+            <Text style={[styles.settingsHint, { color: theme.muted }]}>
+              Show a draggable button on the trackpad. Off docks it in the top bar.
+            </Text>
+          </View>
+          <Switch
+            value={prefs.floatingKeyboard}
+            onValueChange={(v) => updatePrefs({ floatingKeyboard: v })}
+            trackColor={{ false: theme.disabled, true: theme.primary }}
+            thumbColor={Platform.OS === 'android' ? theme.surface : undefined}
+          />
+        </View>
+      </Card>
+
+      <Card style={styles.settingsCard}>
+        <View style={styles.settingsRow}>
+          <View style={{ flex: 1 }}>
             <Text style={[styles.settingsTitle, { color: theme.text }]}>Recent auto-refresh</Text>
             <Text style={[styles.settingsHint, { color: theme.muted }]}>
               Re-probe saved servers while on the Recent tab.

@@ -9,12 +9,18 @@ export interface Prefs {
   autoReconnect: boolean;
   /** Seconds between reachability re-probes on the Recent tab. 0 disables. */
   recentRefreshIntervalSec: number;
+  /** Last position of the floating keyboard button, in px from top-left. */
+  fabPosition: { x: number; y: number } | null;
+  /** Whether the keyboard button is a floating FAB (true) or docked in the top bar. */
+  floatingKeyboard: boolean;
 }
 
 export const DEFAULT_PREFS: Prefs = {
   defaultSensitivity: 1.5,
   autoReconnect: true,
   recentRefreshIntervalSec: 10,
+  fabPosition: null,
+  floatingKeyboard: true,
 };
 
 export async function loadPrefs(): Promise<Prefs> {
@@ -39,7 +45,16 @@ export async function loadPrefs(): Promise<Prefs> {
       typeof p.recentRefreshIntervalSec === 'number'
         ? p.recentRefreshIntervalSec
         : DEFAULT_PREFS.recentRefreshIntervalSec,
+    fabPosition: isPoint(p.fabPosition) ? p.fabPosition : DEFAULT_PREFS.fabPosition,
+    floatingKeyboard:
+      typeof p.floatingKeyboard === 'boolean' ? p.floatingKeyboard : DEFAULT_PREFS.floatingKeyboard,
   };
+}
+
+function isPoint(v: unknown): v is { x: number; y: number } {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return typeof o.x === 'number' && typeof o.y === 'number';
 }
 
 export async function savePrefs(prefs: Prefs): Promise<void> {

@@ -29,7 +29,25 @@ describe('loadPrefs / savePrefs', () => {
   });
 
   it('round-trips a full prefs object', async () => {
-    const custom = { defaultSensitivity: 2.5, autoReconnect: false, recentRefreshIntervalSec: 30 };
+    const custom = {
+      defaultSensitivity: 2.5,
+      autoReconnect: false,
+      recentRefreshIntervalSec: 30,
+      fabPosition: { x: 120, y: 540 },
+      floatingKeyboard: true,
+    };
+    await savePrefs(custom);
+    expect(await loadPrefs()).toEqual(custom);
+  });
+
+  it('persists a null fabPosition', async () => {
+    const custom = {
+      defaultSensitivity: 1.5,
+      autoReconnect: true,
+      recentRefreshIntervalSec: 10,
+      fabPosition: null,
+      floatingKeyboard: false,
+    };
     await savePrefs(custom);
     expect(await loadPrefs()).toEqual(custom);
   });

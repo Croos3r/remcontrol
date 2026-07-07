@@ -6,7 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Card } from './src/components/Card';
 import { Icon } from './src/components/Icon';
 import { Connection } from './src/connection';
-import { loadPrefs, type Prefs } from './src/prefs';
+import { loadPrefs, type Prefs, savePrefs } from './src/prefs';
 import ConnectScreen from './src/screens/ConnectScreen';
 import TrackpadScreen from './src/screens/TrackpadScreen';
 import { loadLastConnection } from './src/storage';
@@ -79,6 +79,15 @@ export default function App() {
     setScreen('connect');
   };
 
+  const onFabPositionChange = (pos: { x: number; y: number }) => {
+    setPrefs((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, fabPosition: pos };
+      void savePrefs(next);
+      return next;
+    });
+  };
+
   return (
     <GestureHandlerRootView style={[styles.root, { backgroundColor: theme.appBg }]}>
       <SafeAreaProvider>
@@ -105,6 +114,9 @@ export default function App() {
             connection={connectionRef.current}
             onDisconnect={onDisconnect}
             initialSensitivity={prefs?.defaultSensitivity}
+            initialFabPosition={prefs?.fabPosition ?? null}
+            floatingKeyboard={prefs?.floatingKeyboard ?? true}
+            onFabPositionChange={onFabPositionChange}
           />
         )}
       </SafeAreaProvider>

@@ -468,6 +468,19 @@ a silent blank list. Mobile data is irrelevant to remcontrol (the server is
 LAN-only, never internet-routable); being on cellular just means mDNS
 doesn't work, which is the same as "no Wi-Fi" for discovery.
 
+**Lazy prompting (no nag on entry).** Discovery is opportunistic, not
+demanding. Opening or focusing the Discover tab starts whatever scans are
+*already possible* (mDNS if Wi-Fi is on, BLE if Bluetooth is on and
+permitted) and does **not** request enabling a radio that is off, and does
+**not** fire a system permission request on entry. A radio that is off or
+unpermitted shows a *passive* empty state with a tap target ("Bluetooth off
+— tap to enable"), not a modal prompt. The app requests enablement (or the
+OS permission dialog) **only** when the user takes an action that needs it:
+tapping that empty state, tapping a "Scan" button, or tapping a recent
+entry whose transport's radio is off. Re-opening the tab after the user
+ignored Bluetooth does not re-prompt — the passive state stays until the
+user taps. This keeps discovery from nagging every time the tab opens.
+
 Discovery matrix:
 
 | Wi-Fi | Bluetooth | mDNS section | BLE section | Working paths |
@@ -484,11 +497,14 @@ need only the transport they point at to be up at *connect* time.
 
 **Pre-connect availability check.** Before attempting a connection, the app
 checks the active transport's radio state. Tapping a `transport: "ble"`
-recent entry with Bluetooth off surfaces "Turn on Bluetooth to use this
-connection" instead of silently failing. Same for Wi-Fi: a `transport: "ws"`
-entry with Wi-Fi off surfaces "Turn on Wi-Fi" / "Not on a network" rather
-than a connection-timeout. This is per-transport and cheap (radio state, not
-a network probe).
+recent entry with Bluetooth off surfaces a passive "Turn on Bluetooth to use
+this connection" message with a tap target, not an auto-enable request —
+tapping the target requests enablement, then retries the connect. Same for
+Wi-Fi: a `transport: "ws"` entry with Wi-Fi off surfaces "Turn on Wi-Fi" /
+"Not on a network" with a tap target rather than silently timing out. This
+is per-transport and cheap (radio state, not a network probe), and follows
+the lazy-prompting rule: the message appears because the user tapped, and
+the enable request follows a second tap on the message.
 
 **Active session and reconnect.** If the active transport's radio drops
 mid-session, `recv() -> None` / `onClose` fires and the reconnect loop
@@ -602,11 +618,12 @@ for the transports the server is running.
   (e.g. 23-byte default ATT MTU leaves ~17 bytes payload after framing), the
   transport refuses to connect and surfaces an error.
 - **BLE off / permission denied:** scan surfaces unavailable (matching
-  `setZeroconfAvailable(false)`); the BLE section shows "Bluetooth off" /
-  "Permission denied" instead of a blank list. A pre-connect availability
-  check stops a `transport: "ble"` connect attempt with "Turn on Bluetooth"
-  rather than a silent timeout. Same for `transport: "ws"` with Wi-Fi off
-  ("Turn on Wi-Fi" / "Not on a network").
+  `setZeroconfAvailable(false)`); the BLE section shows a *passive* "Bluetooth
+  off" / "Permission denied" empty state with a tap target, not a prompt on
+  entry. A pre-connect availability check stops a `transport: "ble"` connect
+  attempt with a "Turn on Bluetooth" message (tap target, not auto-enable).
+  Same for `transport: "ws"` with Wi-Fi off ("Turn on Wi-Fi" / "Not on a
+  network"). See "Lazy prompting".
 - **Active transport's radio drops:** `recv() -> None` / `onClose` fires,
   reconnect loop retries over the same transport with backoff. If the
   stored `ServerInfo` is linked (both identities known) and the other

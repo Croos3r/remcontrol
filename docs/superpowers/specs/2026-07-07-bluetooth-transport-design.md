@@ -31,6 +31,9 @@ unavailable (campus/enterprise client isolation, no shared network, etc.).
 - Classic SPP / RFCOMM. BLE GATT only.
 - A "drop-stale-moves" lossy policy. Framing has the hook; implementation is
   strict-only.
+- A binary payload encoding (msgpack/CBOR/tag-bytes). JSON stays the AEAD
+  payload on both transports; a binary encoding is a targeted BLE-only
+  optimization only if measurements show GATT fragmentation hurting.
 - Token transfer over BLE. The token is carried by the QR (primary flow, no
   typing) or entered manually as a fallback (BLE scan with no QR). The server
   never grants the token to an unauthenticated client over BLE.
@@ -72,6 +75,12 @@ The QR already carries the token on the Wi-Fi path; the same payload gains a
 friction-free. The token rides the QR exactly as on Wi-Fi, so no new security
 risk. Typing the 32-char token remains only as the no-QR fallback (BLE scan).
 
+**Payload encoding — JSON, not binary.**
+JSON stays the AEAD payload on both transports. No perceivable gain on Wi-Fi;
+BLE ships with JSON too, and a binary tag-byte encoding is a targeted
+optimization only if GATT measurements show fragmentation hurting. A protocol
+version byte in the handshake (audit M-3) keeps that door open.
+
 ## Architecture overview
 
 A `Transport` boundary is introduced on both sides, between crypto/protocol
@@ -86,14 +95,14 @@ APP (phone)                                SERVER (PC)
 │ Connection (events, send,   │           │ connection handler (generic over │
 │  reconnect, replay state)   │           │  T: Transport) — handshake,      │
 │  — generic over Transport   │           │  AEAD loop, replay, kick,        │
-├─────────────────────────────┤           │  rate-limit, dispatch→injector  │
+├─────────────────────────────┤           │  rate-limit, dispatch→injector   │
 │ crypto.ts (unchanged)       │           ├──────────────────────────────────┤
 │ protocol (unchanged)        │           │ crypto.rs (unchanged)            │
 ├───── Transport interface ───┤           │ protocol.rs (unchanged)          │
-│  impl: WsTransport           │           ├────── Transport trait ────────────┤
-│  impl: BleTransport (GATT)  │           │  impl: WsTransport (axum adapter) │
+│  impl: WsTransport          │           ├────── Transport trait ───────────┤
+│  impl: BleTransport (GATT)  │           │  impl: WsTransport (axum adapter)│
 │      + framing/fragmentation│           │  impl: BleTransport (GATT)       │
-│      + BLE scan (Android)   │           │      + framing/fragmentation      │
+│      + BLE scan (Android)   │           │      + framing/fragmentation     │
 ├─────────────────────────────┤           │      + GATT server (Linux/Win)   │
 │ native: react-native-ble-*  │           │ native: bluer (Linux),           │
 │         (Android)           │           │         windows crate (WinRT)    │
@@ -245,6 +254,29 @@ text-vs-binary distinction that crypto/protocol's `Frame` enum (Rust) /
   "drop stale moves" policy hooks in. The spec defines the hook (a
   `DropPolicy` enum defaulting to `Strict`); the implementation starts
   `Strict`-only.
+
+### Payload encoding: JSON, not binary
+
+The AEAD payload (the plaintext sealed inside each frame) stays JSON on
+both transports. The v1 design explicitly rejected binary encodings
+(msgpack, WebRTC) as complexity without perceivable latency gain on a LAN,
+and the traffic profile has not changed: a `move` frame is ~30-40 bytes
+plaintext, ~4.8 kB/s at 120 Hz, far under Wi-Fi bandwidth and under BLE's
+effective throughput too. JSON keeps the wire human-debuggable and avoids
+rewriting the protocol layer on both sides with a versioned tag scheme.
+
+BLE's small MTU is the only place a binary encoding could pay off, by
+keeping `move` frames under one GATT packet after the +16-byte AEAD tag and
+12-byte nonce. That's an empirical question, not a foregone conclusion: the
+framing layer fragments 40-byte JSON frames fine. So BLE ships with JSON,
+and a binary tag-byte encoding is a targeted optimization to apply **only
+if** measurements show GATT fragmentation hurting throughput or frame-drop
+rate.
+
+To keep that door open without committing now, add a **protocol version
+byte** to the handshake (the audit's M-3, already a P3 item). A binary
+encoding then lands later as a negotiated version bump, not a breaking
+change.
 
 ### BLE connection lifecycle
 

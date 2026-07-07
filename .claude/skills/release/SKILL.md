@@ -13,12 +13,39 @@ Linux/Windows/macOS + the Android APK, then drafts a GitHub Release). The tag
 push is the one irreversible-ish trigger — everything before it is prep,
 everything after it is watching CI and publishing.
 
-Version numbers in `server/Cargo.toml`, `app/package.json`, and
-`app/app.json` are **not** kept in lockstep with release tags historically
-(e.g. tags reached only v0.1.0 while the app files already say 1.0.0) — the
-workflow doesn't read them, only the tag matters. Still sync them as part of
-a release so they don't drift further; treat mismatches you find as
-pre-existing, not something to silently "fix" mid-release.
+Version numbers in the manifest files below are **not** kept in lockstep
+with release tags historically (e.g. tags reached only v0.1.0 while the app
+files already said 1.0.0) — the workflow doesn't read them, only the tag
+matters. Still sync them as part of a release so they don't drift further;
+treat mismatches you find as pre-existing, not something to silently "fix"
+mid-release.
+
+## Version sync manifest
+
+Every release must update **all** of these to the new `X.Y.Z` before
+tagging. None of them is optional; a stale one here has broken a past
+release (the server lockfile stayed pinned to 1.1.0 while Cargo.toml said
+1.2.0, and the release built the wrong version).
+
+: Files to bump after every version bump
+
+`server/Cargo.toml`
+: The `version = "..."` field under `[package]`. Edit by hand.
+
+`server/Cargo.lock`
+: The `version = "..."` line in the `[[package]] name = "remcontrol-server"`
+block. Regenerate with `cargo update -p remcontrol-server` (from `server/`),
+or by running `cargo build` — do not hand-edit.
+
+`app/package.json`
+: The top-level `"version": "..."` field. Edit by hand.
+
+`app/app.json`
+: `expo.version`. Edit by hand.
+
+Do **not** touch `app/package-lock.json` — its `version` field is the npm
+package version and is unrelated to the app release version. Transitive
+dependency versions in that file are also irrelevant.
 
 ## Steps
 
@@ -38,16 +65,18 @@ pre-existing, not something to silently "fix" mid-release.
    (cd app && npx @biomejs/biome ci && npx tsc --noEmit && npm test)
    ```
 
-4. **Sync version fields** to the new version: `server/Cargo.toml`
-   (`version = "..."`), `app/package.json` (`version`), `app/app.json`
-   (`expo.version`). Then regenerate the server lockfile so it doesn't
-   stay pinned to the old version (this is what broke the v1.2.0 release
-   — the lockfile still referenced 1.1.0):
+4. **Bump and verify version sync.** Update every file in the
+   [Version sync manifest](#version-sync-manifest) to the new `X.Y.Z`. Then
+   **verify** — do not trust `cargo build` to have run, re-check every
+   field explicitly:
    ```sh
-   (cd server && cargo update -p remcontrol-server)
+   rg -n '^version = "' server/Cargo.toml | head -1
+   rg -A1 '^name = "remcontrol-server"' server/Cargo.lock | rg '^version'
+   rg -n '"version"' app/package.json | head -1
+   rg -n '"version"' app/app.json | head -1
    ```
-   Verify before committing: `rg '^name = "remcontrol-server"' -A1
-   server/Cargo.lock` must show the new version. Commit as
+   Every line must print the new `X.Y.Z`. If any prints the old version,
+   fix it and re-check before committing. Commit as
    `chore(release): vX.Y.Z` if anything changed.
 
 5. **Tag and push** — confirm with the user before this step, it's the
